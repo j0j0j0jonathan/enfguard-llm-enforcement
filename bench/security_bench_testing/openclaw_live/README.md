@@ -28,6 +28,22 @@ Temporal policies use native trace seconds under
 `ENFGUARD_TIME_MODE=wall_seconds`. Metric windows are written directly as
 `ONCE [0,N]`, and session-wide accumulation may use plain `ONCE`.
 
+### A note on window lengths
+
+The standalone category packs and `combined_demo_policies.yaml` are frozen at
+the build that produced the per-category live-test evidence. They use the
+original two-minute correlation window, `ONCE [0,120]`.
+
+Later measurement showed that two minutes is too short for real agent work.
+Observed gaps between a sensitive read and the matching send were 148, 182 and
+531 seconds, all of which a two-minute window misses. The evaluation packs under
+`eval/` therefore use a session-scoped `ONCE [0,1800]`, and that is the window
+behind the reported results.
+
+The older packs are kept unchanged so they still match the evidence collected
+with them. For a deployment, prefer the longer window: either load an `eval/`
+pack or widen the bound in your own copy. Nothing else in the clause changes.
+
 ## Combined pack
 
 `combined_demo_policies.yaml` holds all thirteen category policies, copied from
