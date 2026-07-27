@@ -1,0 +1,54 @@
+# Predicate examples. Copy individual entries into `predicates:`.
+
+predicates:
+  - name: hard_rules
+    kind: builtin
+
+  - name: contains_secrets
+    kind: builtin
+
+  - name: model_blocklist
+    kind: builtin
+
+  - name: wall_ms_within
+    kind: builtin
+
+  - name: mentions_invoice
+    kind: python
+    path: ./examples/demo_predicates.py
+    args:
+      - name: content
+        type: string
+
+  - name: confidential_information
+    kind: llm_judge
+    inputs:
+      - source: Message
+        arg: content
+    system_prompt: |
+      Score 1.0 only when the text contains confidential company information,
+      customer data, credentials, private personal data, or internal business
+      details that should not be sent to a model.
+      Score 0.0 otherwise.
+    on_fail: closed
+
+  - name: professional_tone
+    kind: llm_judge
+    inputs:
+      - source: Completion
+        arg: content
+    system_prompt: |
+      Score 1.0 when the assistant response is unprofessional, insulting,
+      reckless, or inappropriate for customer-facing business communication.
+      Score 0.0 otherwise.
+    on_fail: warn
+
+  - name: no_emoji_in_output
+    kind: llm_judge
+    inputs:
+      - source: Completion
+        arg: content
+    system_prompt: |
+      Score 1.0 only when the response uses emoji characters.
+      Score 0.0 otherwise.
+    on_fail: open

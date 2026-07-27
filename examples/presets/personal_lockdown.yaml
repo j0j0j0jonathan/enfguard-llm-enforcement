@@ -1,0 +1,78 @@
+# Personal Lockdown: strong protection for privacy-conscious users.
+
+backend:
+  chat_llm: openai
+  judge_backend: openai
+  judge_openai_model: gpt-4o-mini
+  judge_timeout_ms: 5000
+  judge_fail_mode: closed
+
+switches:
+  - id: max_prompt_tokens
+    kind: int
+    label: "Max prompt tokens"
+    default: 1000
+    min: 100
+    max: 8000
+
+predicates:
+  - name: contains_secrets
+    kind: builtin
+  - name: wall_ms_within
+    kind: builtin
+  - name: personal_data
+    kind: llm_judge
+    inputs:
+      - source: Message
+        arg: content
+    system_prompt: |
+      Score 1.0 when the user is about to share personal, medical, legal,
+      financial, location, identity, or third-party private data.
+      Score 0.0 otherwise.
+    on_fail: closed
+
+policies:
+  - id: block_secrets
+    enabled: true
+    mfotl: |
+      ALWAYS (FORALL t, c, n.
+        (PolicyActive(t, "block_secrets")
+         AND Message(t, "user", c, n)
+         AND contains_secrets(c) > 0.5)
+        IMPLIES Block(t, "request", "secrets", "do not send passwords, tokens, or keys"))
+
+  - id: warn_personal_data
+    enabled: true
+    mfotl: |
+      ALWAYS (FORALL t, c, n.
+        (PolicyActive(t, "warn_personal_data")
+         AND Message(t, "user", c, n)
+         AND personal_data(c) > 0.5)
+        IMPLIES Warn(t, "request", "privacy", "prompt appears to contain personal data"))
+
+  - id: block_prompt_over_budget
+    enabled: true
+    mfotl: |
+      ALWAYS (FORALL t, c, n, max.
+        (PolicyActive(t, "block_prompt_over_budget")
+         AND Message(t, "user", c, n)
+         AND SettingInt(t, "max_prompt_tokens", max)
+         AND n > max)
+        IMPLIES Block(t, "request", "token_budget", "prompt is too long"))
+
+  - id: rate_limit_3_requests_3min
+    enabled: true
+    mfotl: |
+      ALWAYS (FORALL t, s, ms_now.
+        (PolicyActive(t, "rate_limit_3_requests_3min")
+         AND (EXISTS r_1. Turn(t, r_1, s))
+         AND Clock(t, "request", ms_now)
+         AND ONCE [1, 1000] (EXISTS t1, ms1.
+           (EXISTS r_2. Turn(t1, r_2, s)) AND Clock(t1, "request", ms1)
+           AND PolicyActive(t1, "rate_limit_3_requests_3min")
+           AND wall_ms_within(ms_now, ms1, 180000) > 0.5
+           AND ONCE [1, 1000] (EXISTS t2, ms2.
+             (EXISTS r_3. Turn(t2, r_3, s)) AND Clock(t2, "request", ms2)
+             AND PolicyActive(t2, "rate_limit_3_requests_3min")
+             AND wall_ms_within(ms_now, ms2, 180000) > 0.5)))
+        IMPLIES Block(t, "request", "rate_limit", "max 2 requests per 3 minutes"))

@@ -1,0 +1,60 @@
+# Privacy Shield: protect personal data before model calls.
+
+backend:
+  chat_llm: openai
+  judge_backend: openai
+  judge_openai_model: gpt-4o-mini
+  judge_timeout_ms: 5000
+  judge_fail_mode: closed
+
+predicates:
+  - name: contains_secrets
+    kind: builtin
+  - name: personal_data
+    kind: llm_judge
+    inputs:
+      - source: Message
+        arg: content
+    system_prompt: |
+      Score 1.0 when the prompt includes personal data such as names with
+      contact details, addresses, IDs, medical data, financial data, or
+      third-party private information. Score 0.0 otherwise.
+    on_fail: closed
+  - name: sensitive_records
+    kind: llm_judge
+    inputs:
+      - source: Message
+        arg: content
+    system_prompt: |
+      Score 1.0 for passport numbers, government IDs, medical records,
+      bank details, passwords, seed phrases, or private legal documents.
+      Score 0.0 otherwise.
+    on_fail: closed
+
+policies:
+  - id: block_secrets
+    enabled: true
+    mfotl: |
+      ALWAYS (FORALL t, c, n.
+        (PolicyActive(t, "block_secrets")
+         AND Message(t, "user", c, n)
+         AND contains_secrets(c) > 0.5)
+        IMPLIES Block(t, "request", "privacy", "prompt contains a secret"))
+
+  - id: warn_personal_data
+    enabled: true
+    mfotl: |
+      ALWAYS (FORALL t, c, n.
+        (PolicyActive(t, "warn_personal_data")
+         AND Message(t, "user", c, n)
+         AND personal_data(c) > 0.5)
+        IMPLIES Warn(t, "request", "privacy", "prompt appears to contain personal data"))
+
+  - id: block_sensitive_records
+    enabled: true
+    mfotl: |
+      ALWAYS (FORALL t, c, n.
+        (PolicyActive(t, "block_sensitive_records")
+         AND Message(t, "user", c, n)
+         AND sensitive_records(c) > 0.5)
+        IMPLIES Block(t, "request", "privacy", "sensitive record blocked"))

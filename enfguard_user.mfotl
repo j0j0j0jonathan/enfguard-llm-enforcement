@@ -1,0 +1,10 @@
+(* EnfGuard v2 base policy — no-op fallback.
+
+   This file is used only when `enfguard.yaml` declares no policies. It
+   intentionally enforces nothing. Write your real policies in YAML; the
+   loader will materialise them as `state/enfguard_composite.mfotl`.
+
+   For copy-paste-able example policies (P1..P9), see
+   `examples/inspiration_policies.mfotl`. *)
+
+ALWAYS TRUE

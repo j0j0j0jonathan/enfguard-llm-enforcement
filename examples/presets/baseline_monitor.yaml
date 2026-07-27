@@ -1,0 +1,54 @@
+# Baseline Monitor: minimal enforcement, maximum observability.
+
+backend:
+  chat_llm: openai
+  judge_backend: openai
+  judge_openai_model: gpt-4o-mini
+  judge_timeout_ms: 2500
+  judge_fail_mode: warn
+
+feedback:
+  enabled: true
+
+runtime:
+  judge_batching: conservative
+  trace_assistant_content: true
+
+switches:
+  - id: enforcement_mode
+    kind: choice
+    label: "Enforcement mode"
+    options: [audit, warn, enforce]
+    default: audit
+
+predicates:
+  - name: hard_rules
+    kind: builtin
+  - name: professional_tone
+    kind: llm_judge
+    inputs:
+      - source: Completion
+        arg: content
+    system_prompt: |
+      Score 1.0 when the response is unprofessional, insulting, reckless,
+      or inappropriate for business communication. Score 0.0 otherwise.
+    on_fail: warn
+
+policies:
+  - id: block_obvious_hard_risk
+    enabled: true
+    mfotl: |
+      ALWAYS (FORALL t, c, n.
+        (PolicyActive(t, "block_obvious_hard_risk")
+         AND Message(t, "user", c, n)
+         AND hard_rules(c) > 0.5)
+        IMPLIES Block(t, "request", "safety", "obvious hard-risk input"))
+
+  - id: warn_unprofessional_output
+    enabled: true
+    mfotl: |
+      ALWAYS (FORALL t, c, n.
+        (PolicyActive(t, "warn_unprofessional_output")
+         AND Completion(t, c, n)
+         AND professional_tone(c) > 0.5)
+        IMPLIES Warn(t, "response", "style", "response may be unprofessional"))

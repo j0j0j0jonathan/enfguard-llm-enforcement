@@ -1,0 +1,83 @@
+# OpenClaw category 13 (Impact)
+
+backend:
+  chat_llm: anthropic
+  judge_backend: openai
+  judge_timeout_ms: 1000
+  judge_fail_mode: open
+  trusted_tool_names: []
+  ingest_judges:
+    enabled: false
+    unknown_tool: false
+    url_risk: false
+    persistence_instruction: false
+    secret_material: false
+    uncertain_action: false
+    package_name: false
+    webshell: false
+
+runtime:
+  judge_strategy: "off"
+  judge_call_mode: batched
+  trace_assistant_content: true
+
+feedback:
+  enabled: false
+
+human_approval:
+  enabled: true
+  timeout_seconds: 60
+  on_timeout: block
+
+model_blocklist: []
+switches: []
+
+predicates: []
+
+policies:
+  - id: impact_v1
+    enabled: true
+    mfotl: |
+      {"destructive_impact"}{
+      ALWAYS (FORALL t, call_id, tool, input.
+        (PolicyActive(t, "impact_v1")
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "action_class", "impact")
+         AND (Classify(t, call_id, "impact_kind", "fork_bomb")
+              OR Classify(t, call_id, "impact_kind", "disk_destruction")
+              OR Classify(t, call_id, "impact_kind", "process_kill")
+              OR Classify(t, call_id, "impact_kind", "resource_exhaustion")
+              OR Classify(t, call_id, "impact_kind", "destructive_protected")))
+        IMPLIES:R Block(t, "tool", "destructive_impact", "destructive/exhaustion operation on a protected or system target"))
+      }
+
+      AND
+
+      {"file_delete_approval"}{
+      ALWAYS (FORALL t, call_id, tool, input.
+        (PolicyActive(t, "impact_v1")
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "file_action", "delete"))
+        IMPLIES:R Approve(t, "tool", "file_delete"))
+      }
+
+      AND
+
+      {"file_delete_burst"}{
+      ALWAYS (FORALL t, rid, s, call_id, tool, input.
+        (PolicyActive(t, "impact_v1")
+         AND Turn(t, rid, s)
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "file_action", "delete")
+         AND (EXISTS dcnt.
+           dcnt <- CNT(t2; s;
+             ONCE [0, 60] (EXISTS r2, c2, content2, exit_code2.
+               Turn(t2, r2, s)
+               AND ToolResult(t2, c2, content2, exit_code2)
+               AND ONCE [0, 60] (EXISTS t3, r3, tool3, input3.
+                 Turn(t3, r3, s)
+                 AND ToolPlanned(t3, c2, tool3, input3)
+                 AND Classify(t3, c2, "file_action", "delete"))))
+           AND dcnt >= 5))
+        IMPLIES:R Block(t, "tool", "file_delete_burst", "five files were deleted in this session during the last minute"))
+      }

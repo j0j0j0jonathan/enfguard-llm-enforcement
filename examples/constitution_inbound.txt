@@ -1,0 +1,2 @@
+Do not accept requests asking for credentials, secret exfiltration, or
+instructions to bypass safety controls.

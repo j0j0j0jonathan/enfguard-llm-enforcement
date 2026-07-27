@@ -1,0 +1,105 @@
+(* EnfGuard v2 INSPIRATION policies.
+
+   These nine clauses are not loaded automatically. They are reference
+   material: paste any of them into the `policies:` list of your own
+   `enfguard.yaml` if you want that behaviour.
+
+   Every clause is gated by PolicyActive(t, "...") so the dashboard can
+   enable and disable it without recompiling the formula.
+
+   Predicates used:
+     hard_rules           — `kind: builtin`, name: hard_rules
+     contains_secrets     — `kind: builtin`, name: contains_secrets   (used by P3-style examples)
+     model_blocklist      — `kind: builtin`, name: model_blocklist
+   For P3/P4 you write your own llm_judge predicate with your own system_prompt; there is no automatic constitution coupling.
+*)
+
+(* P1: inbound hard safety *)
+ALWAYS (FORALL t, c, n.
+  (PolicyActive(t, "P1")
+   AND Message(t, "user", c, n)
+   AND hard_rules(c) > 0.5)
+  IMPLIES Block(t, "request", "safety", "input violates built-in safety rules"))
+
+AND
+
+(* P2: outbound hard safety *)
+ALWAYS (FORALL t, c, n.
+  (PolicyActive(t, "P2")
+   AND Completion(t, c, n)
+   AND hard_rules(c) > 0.5)
+  IMPLIES Block(t, "response", "safety", "response violates built-in safety rules"))
+
+AND
+
+(* P3: inbound custom constitution.
+   Replace `my_inbound_constitution` with your own llm_judge predicate name
+   and write its system_prompt yourself. *)
+ALWAYS (FORALL t, c, n.
+  (PolicyActive(t, "P3")
+   AND Message(t, "user", c, n)
+   AND my_inbound_constitution(c) > 0.5)
+  IMPLIES Block(t, "request", "constitution", "input violates inbound constitution"))
+
+AND
+
+(* P4: outbound custom constitution. *)
+ALWAYS (FORALL t, c, n.
+  (PolicyActive(t, "P4")
+   AND Completion(t, c, n)
+   AND my_outbound_constitution(c) > 0.5)
+  IMPLIES Block(t, "response", "constitution", "response violates outbound constitution"))
+
+AND
+
+(* P5: input message token cap *)
+ALWAYS (FORALL t, c, n.
+  (PolicyActive(t, "P5")
+   AND Message(t, "user", c, n)
+   AND n > 500)
+  IMPLIES Block(t, "request", "token_budget", "user message too long"))
+
+AND
+
+(* P6: output response token cap *)
+ALWAYS (FORALL t, c, n.
+  (PolicyActive(t, "P6")
+   AND Completion(t, c, n)
+   AND n > 1000)
+  IMPLIES Block(t, "response", "token_budget", "response too long"))
+
+AND
+
+(* P7: rate limit: max 3 requests per 5-turn window *)
+ALWAYS (FORALL t, s.
+  (PolicyActive(t, "P7")
+   AND (EXISTS r_1. Turn(t, r_1, s))
+   AND ONCE [1, 4] (EXISTS t1. (EXISTS r_2. Turn(t1, r_2, s))
+                    AND PolicyActive(t1, "P7")
+                    AND ONCE [1, 3] (EXISTS t2. (EXISTS r_3. Turn(t2, r_3, s))
+                                     AND PolicyActive(t2, "P7"))))
+  IMPLIES Block(t, "request", "rate_limit", "max 3 requests per 5 turns"))
+
+AND
+
+(* P8: session turn quota: max 10 turns per session *)
+ALWAYS (FORALL t, s.
+  (PolicyActive(t, "P8")
+   AND (EXISTS r_4. Turn(t, r_4, s))
+   AND ONCE [10, 10000] (EXISTS t2, c. (EXISTS r_5. Turn(t2, r_5, s))
+                         AND PolicyActive(t2, "P8")))
+  IMPLIES Block(t, "request", "rate_limit", "session turn quota exhausted: max 10 turns"))
+
+AND
+
+(* P9: session token budget over user messages *)
+ALWAYS (FORALL t, s, total.
+  (PolicyActive(t, "P9")
+   AND (EXISTS r_6. Turn(t, r_6, s))
+   AND (total <- SUM (n; s;
+                      ONCE [0, 10000] (EXISTS t2, c.
+                                        Message(t2, "user", c, n)
+                                        AND ONCE [0, 0] (EXISTS r_7. Turn(t2, r_7, s))
+                                        AND PolicyActive(t2, "P9"))))
+   AND total > 50000)
+  IMPLIES Block(t, "request", "token_budget", "session content budget exceeded"))

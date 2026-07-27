@@ -1,0 +1,137 @@
+# OpenClaw category 4 (Execution) 
+
+
+backend:
+  chat_llm: anthropic
+  judge_backend: openai
+  judge_timeout_ms: 1000
+  judge_fail_mode: open
+  trusted_tool_names: []
+  # Only Execution's URL-risk and uncertain-action adapters are enabled.
+  ingest_judges:
+    enabled: true
+    unknown_tool: false
+    url_risk: true
+    persistence_instruction: false
+    secret_material: false
+    uncertain_action: true
+    package_name: false
+    webshell: false
+
+runtime:
+  judge_strategy: "off"
+  judge_call_mode: batched
+  trace_assistant_content: true
+
+feedback:
+  enabled: false
+
+human_approval:
+  enabled: true
+  timeout_seconds: 60
+  on_timeout: block
+
+model_blocklist: []
+switches: []
+
+predicates: []
+
+policies:
+  - id: execution_v2
+    enabled: true
+    mfotl: |
+      {"encoded_execution"}{
+      ALWAYS (FORALL t, call_id, tool, input.
+        (PolicyActive(t, "execution_v2")
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "action_class", "execution")
+         AND Classify(t, call_id, "execution_kind", "encoded"))
+        IMPLIES:R Block(t, "tool", "encoded_execution", "encoded payload decodes to a dangerous command"))
+      }
+
+      AND
+
+      {"reverse_shell"}{
+      ALWAYS (FORALL t, call_id, tool, input.
+        (PolicyActive(t, "execution_v2")
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "action_class", "execution")
+         AND Classify(t, call_id, "execution_kind", "reverse_shell"))
+        IMPLIES:R Block(t, "tool", "reverse_shell", "command opens a reverse shell / C2 channel"))
+      }
+
+      AND
+
+      {"obfuscated_execution"}{
+      ALWAYS (FORALL t, call_id, tool, input.
+        (PolicyActive(t, "execution_v2")
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "action_class", "execution")
+         AND Classify(t, call_id, "execution_kind", "obfuscated"))
+        IMPLIES:R Block(t, "tool", "obfuscated_execution", "judge-confirmed hidden or obfuscated malicious execution"))
+      }
+
+      AND
+
+      {"remote_payload_suspicious"}{
+      ALWAYS (FORALL t, call_id, tool, input.
+        (PolicyActive(t, "execution_v2")
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "action_class", "execution")
+         AND Classify(t, call_id, "execution_kind", "remote_payload")
+         AND Classify(t, call_id, "network_risk", "suspicious"))
+        IMPLIES:R Block(t, "tool", "remote_payload_suspicious", "fetch-and-run from a suspicious URL"))
+      }
+
+      AND
+
+      {"remote_payload_execution"}{
+      ALWAYS (FORALL t, call_id, tool, input.
+        (PolicyActive(t, "execution_v2")
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "action_class", "execution")
+         AND Classify(t, call_id, "execution_kind", "remote_payload")
+         AND (Classify(t, call_id, "network_risk", "external")
+              OR Classify(t, call_id, "network_risk", "trusted")))
+        IMPLIES:R Approve(t, "tool", "remote_payload_execution"))
+      }
+
+      AND
+
+      {"instruction_authorized_execution"}{
+      ALWAYS (FORALL t, rid, s, call_id, tool, input.
+        (PolicyActive(t, "execution_v2")
+         AND Turn(t, rid, s)
+         AND ToolPlanned(t, call_id, tool, input)
+         AND (Classify(t, call_id, "tool_family", "shell")
+              OR Classify(t, call_id, "tool_family", "code")
+              OR Classify(t, call_id, "tool_family", "network"))
+         AND ONCE [0, 120] (EXISTS t2, r2, c2, content2, ec2.
+              Turn(t2, r2, s)
+              AND NOT (t = t2)
+              AND ToolResult(t2, c2, content2, ec2)
+              AND Classify(t2, c2, "content_risk", "instruction_like")))
+        IMPLIES:R Block(t, "tool", "untrusted_authorization", "privileged action follows an injected agent-directed instruction"))
+      }
+
+      AND
+
+      {"dangerous_after_untrusted_result"}{
+      ALWAYS (FORALL t, rid, s, call_id, tool, input.
+        (PolicyActive(t, "execution_v2")
+         AND Turn(t, rid, s)
+         AND ToolPlanned(t, call_id, tool, input)
+         AND (Classify(t, call_id, "command_risk", "critical")
+              OR Classify(t, call_id, "command_risk", "elevated")
+              OR Classify(t, call_id, "execution_kind", "encoded")
+              OR Classify(t, call_id, "execution_kind", "reverse_shell")
+              OR Classify(t, call_id, "execution_kind", "remote_payload"))
+         AND ONCE [0, 120] (EXISTS t2, r2, rc, ct, ec.
+              Turn(t2, r2, s)
+              AND ToolResult(t2, rc, ct, ec)
+              AND NOT (t = t2)
+              AND Untrusted(t2, "tool_result")
+              AND (Classify(t2, rc, "content_risk", "instruction_like")
+                   OR Classify(t2, rc, "content_risk", "secret_material"))))
+        IMPLIES:R Block(t, "tool", "untrusted_authorization", "dangerous action follows a risk-flagged untrusted tool result in session"))
+      }

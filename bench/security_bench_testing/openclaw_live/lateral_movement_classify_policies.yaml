@@ -1,0 +1,87 @@
+# OpenClaw category 10 (Lateral Movement)
+
+backend:
+  chat_llm: anthropic
+  judge_backend: openai
+  judge_timeout_ms: 1000
+  judge_fail_mode: open
+  trusted_tool_names: []
+  ingest_judges:
+    enabled: false
+    unknown_tool: false
+    url_risk: false
+    persistence_instruction: false
+    secret_material: false
+    uncertain_action: false
+    package_name: false
+    webshell: false
+
+runtime:
+  judge_strategy: "off"
+  judge_call_mode: batched
+  trace_assistant_content: true
+
+feedback:
+  enabled: false
+
+human_approval:
+  enabled: true
+  timeout_seconds: 60
+  on_timeout: block
+
+model_blocklist: []
+switches: []
+predicates: []
+
+policies:
+  - id: lateral_movement_v1
+    enabled: true
+    mfotl: |
+      {"lateral_tunnel"}{
+      ALWAYS (FORALL t, call_id, tool, input.
+        (PolicyActive(t, "lateral_movement_v1")
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "action_class", "lateral_movement")
+         AND Classify(t, call_id, "lm_kind", "tunnel"))
+        IMPLIES:R Block(t, "tool", "lateral_tunnel", "port-forward or proxy tunnel to another service"))
+      }
+
+      AND
+
+      {"pivot_after_credential"}{
+      ALWAYS (FORALL t, rid, s, call_id, tool, input.
+        (PolicyActive(t, "lateral_movement_v1")
+         AND Turn(t, rid, s)
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "action_class", "lateral_movement")
+         AND ONCE [0, 120] (EXISTS t1, r1, c1, tool1, input1.
+              PolicyActive(t1, "lateral_movement_v1")
+              AND Turn(t1, r1, s)
+              AND NOT (t = t1)
+              AND ToolPlanned(t1, c1, tool1, input1)
+              AND Classify(t1, c1, "action_class", "credential_access")))
+        IMPLIES:R Block(t, "tool", "pivot_after_credential", "host pivot follows a credential access in this session"))
+      }
+
+      AND
+
+      {"same_turn_credential_pivot"}{
+      ALWAYS (FORALL t, call_id, tool, input.
+        (PolicyActive(t, "lateral_movement_v1")
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "action_class", "lateral_movement")
+         AND Classify(t, call_id, "lm_kind", "ssh_pivot")
+         AND Classify(t, call_id, "credential_kind", "ssh_key"))
+        IMPLIES:R Block(t, "tool", "same_turn_credential_pivot", "SSH pivot uses credential key material in the same command"))
+      }
+
+      AND
+
+      {"internal_scan"}{
+      ALWAYS (FORALL t, call_id, tool, input.
+        (PolicyActive(t, "lateral_movement_v1")
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "action_class", "lateral_movement")
+         AND Classify(t, call_id, "lm_kind", "internal_scan"))
+        IMPLIES:R Warn(t, "tool", "internal_scan", "high-speed internal network scan for pivot targets"))
+      }

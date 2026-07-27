@@ -1,0 +1,68 @@
+# Escalation Demo: same predicate, different action by runtime safety level.
+
+backend:
+  chat_llm: openai
+  judge_backend: openai
+  judge_openai_model: gpt-4o-mini
+  judge_timeout_ms: 5000
+  judge_fail_mode: warn
+
+switches:
+  - id: safety_level
+    kind: choice
+    label: "Safety level"
+    options: [low, medium, high, critical]
+    default: medium
+
+predicates:
+  - name: confidential_information
+    kind: llm_judge
+    inputs:
+      - source: Message
+        arg: content
+    system_prompt: |
+      Score 1.0 only when the prompt contains confidential company data,
+      credentials, private personal data, or sensitive internal details.
+      Score 0.0 otherwise.
+    on_fail: warn
+
+policies:
+  - id: confidential_low_warn
+    enabled: true
+    mfotl: |
+      ALWAYS (FORALL t, c, n.
+        (PolicyActive(t, "confidential_low_warn")
+         AND Message(t, "user", c, n)
+         AND SettingString(t, "safety_level", "low")
+         AND confidential_information(c) > 0.5)
+        IMPLIES Warn(t, "request", "privacy", "confidential input observed"))
+
+  - id: confidential_medium_warn
+    enabled: true
+    mfotl: |
+      ALWAYS (FORALL t, c, n.
+        (PolicyActive(t, "confidential_medium_warn")
+         AND Message(t, "user", c, n)
+         AND SettingString(t, "safety_level", "medium")
+         AND confidential_information(c) > 0.5)
+        IMPLIES Warn(t, "request", "privacy", "confidential input may be sent"))
+
+  - id: confidential_high_block
+    enabled: true
+    mfotl: |
+      ALWAYS (FORALL t, c, n.
+        (PolicyActive(t, "confidential_high_block")
+         AND Message(t, "user", c, n)
+         AND SettingString(t, "safety_level", "high")
+         AND confidential_information(c) > 0.5)
+        IMPLIES Block(t, "request", "privacy", "confidential input blocked"))
+
+  - id: confidential_critical_approval
+    enabled: true
+    mfotl: |
+      ALWAYS (FORALL t, c, n.
+        (PolicyActive(t, "confidential_critical_approval")
+         AND Message(t, "user", c, n)
+         AND SettingString(t, "safety_level", "critical")
+         AND confidential_information(c) > 0.5)
+        IMPLIES Approve(t, "request", "Override critical privacy block?"))

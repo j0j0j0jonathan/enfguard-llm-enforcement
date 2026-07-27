@@ -1,0 +1,1411 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>EnfGuard Chat</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #f6f7f9;
+        color: #1d2430;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+      }
+
+      main {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(360px, 42vw);
+        min-height: 100vh;
+      }
+
+      .chat {
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        min-width: 0;
+        border-right: 1px solid #d8dde6;
+        background: #ffffff;
+      }
+
+      header,
+      form {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        padding: 14px 16px;
+        border-bottom: 1px solid #e2e6ee;
+      }
+
+      details.system-prompt {
+        border-bottom: 1px solid #e2e6ee;
+        background: #fafbfd;
+      }
+
+      details.system-prompt > summary {
+        padding: 8px 16px;
+        cursor: pointer;
+        color: #586174;
+        font-size: 13px;
+        list-style: none;
+      }
+
+      details.system-prompt > summary::-webkit-details-marker {
+        display: none;
+      }
+
+      details.system-prompt > summary::before {
+        content: "▸ ";
+      }
+
+      details.system-prompt[open] > summary::before {
+        content: "▾ ";
+      }
+
+      details.system-prompt textarea {
+        width: calc(100% - 32px);
+        margin: 0 16px 12px;
+        min-height: 64px;
+        max-height: 200px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 13px;
+      }
+
+      form {
+        border-top: 1px solid #e2e6ee;
+        border-bottom: 0;
+      }
+
+      select,
+      input,
+      textarea,
+      button {
+        font: inherit;
+      }
+
+      select,
+      input,
+      textarea {
+        border: 1px solid #c8cfda;
+        border-radius: 6px;
+        padding: 9px 10px;
+        background: #ffffff;
+      }
+
+      textarea {
+        flex: 1;
+        min-height: 44px;
+        max-height: 140px;
+        resize: vertical;
+      }
+
+      button {
+        border: 0;
+        border-radius: 6px;
+        padding: 10px 14px;
+        background: #1f6feb;
+        color: #ffffff;
+        cursor: pointer;
+      }
+
+      button:disabled {
+        cursor: wait;
+        opacity: 0.65;
+      }
+
+      .messages {
+        overflow: auto;
+        padding: 18px 16px;
+      }
+
+      .message {
+        max-width: 850px;
+        margin: 0 0 14px;
+        padding: 12px 14px;
+        border: 1px solid #e1e6ef;
+        border-radius: 8px;
+        background: #fbfcfe;
+        white-space: pre-wrap;
+      }
+
+      .message.user {
+        background: #eef5ff;
+      }
+
+      .meta {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin-bottom: 6px;
+        color: #586174;
+        font-size: 13px;
+      }
+
+      .badge {
+        border-radius: 999px;
+        padding: 2px 8px;
+        background: #e8edf5;
+        color: #344054;
+      }
+
+      .trace-card {
+        margin-top: 8px;
+        border: 1px solid #e1e6ef;
+        border-radius: 8px;
+        background: #ffffff;
+        font-size: 12px;
+      }
+
+      .trace-card > summary {
+        list-style: none;
+        cursor: pointer;
+        padding: 8px 12px;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+
+      .trace-card > summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .trace-card > summary::before {
+        content: "▸";
+        color: #98a2b3;
+        font-size: 10px;
+      }
+
+      .trace-card[open] > summary::before {
+        content: "▾";
+      }
+
+      .verdict-pill {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+      }
+
+      .verdict-pill.allow {
+        background: #ecfdf5;
+        color: #04754d;
+      }
+
+      .verdict-pill.warn {
+        background: #fff7ed;
+        color: #9a4700;
+      }
+
+      .verdict-pill.block {
+        background: #fef2f2;
+        color: #9b1c1c;
+      }
+
+      .trace-card .summary-meta {
+        color: #586174;
+      }
+
+      .trace-card .summary-fired {
+        color: #1d2430;
+        font-weight: 500;
+      }
+
+      .trace-detail {
+        border-top: 1px solid #edf1f6;
+        padding: 10px 12px;
+        display: grid;
+        gap: 12px;
+      }
+
+      .trace-phases-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 12px;
+        align-items: start;
+      }
+
+      .phase-block {
+        min-width: 0;
+        border: 1px solid #edf1f6;
+        border-radius: 6px;
+        background: #fafbfd;
+        padding: 8px 10px;
+        overflow: hidden;
+      }
+
+      .phase-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 6px;
+      }
+
+      .phase-header strong {
+        color: #1d2430;
+      }
+
+      .pred-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 11px;
+        margin-top: 4px;
+      }
+
+      .pred-table th,
+      .pred-table td {
+        text-align: left;
+        padding: 4px 6px;
+        border-top: 1px solid #edf1f6;
+        vertical-align: top;
+      }
+
+      .pred-table th {
+        color: #98a2b3;
+        font-weight: 500;
+        background: transparent;
+      }
+
+      .pred-table td.fired {
+        color: #9b1c1c;
+        font-weight: 500;
+      }
+
+      .pred-detail summary {
+        cursor: pointer;
+        list-style: none;
+      }
+
+      .pred-detail summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .pred-detail summary::before {
+        content: "▸ ";
+        color: #98a2b3;
+      }
+
+      .pred-detail[open] summary::before {
+        content: "▾ ";
+      }
+
+      .pred-detail pre {
+        margin: 4px 0 0;
+        padding: 6px 8px;
+        background: #f1f4f9;
+        border-radius: 4px;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-size: 11px;
+        max-height: 200px;
+        overflow: auto;
+      }
+
+      .pred-detail .pred-block-label:first-of-type,
+      .pred-detail summary + .judge-override {
+        margin-top: 6px;
+      }
+
+      .pred-block-label {
+        color: #98a2b3;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-top: 6px;
+      }
+
+      .judge-override {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 8px;
+      }
+
+      .override-button {
+        min-height: 26px;
+        padding: 0 8px;
+        border: 1px solid #d6dce7;
+        border-radius: 4px;
+        background: #f8fafc;
+        color: #1d2430;
+        cursor: pointer;
+        font: inherit;
+        font-size: 11px;
+      }
+
+      .override-status {
+        color: #586174;
+      }
+
+      .override-status.error {
+        color: #9b1c1c;
+      }
+
+      .empty-trace {
+        color: #98a2b3;
+        font-style: italic;
+        padding: 6px 12px 10px;
+      }
+
+      iframe {
+        width: 100%;
+        height: 100vh;
+        border: 0;
+        background: #f8fafc;
+      }
+
+      @media (max-width: 900px) {
+        main {
+          grid-template-columns: 1fr;
+        }
+
+        iframe {
+          display: none;
+        }
+      }
+
+      :root {
+        background: #fafafa;
+        color: #0f172a;
+        --bg: #fafafa;
+        --surface: #ffffff;
+        --surface-muted: #f8fafc;
+        --border: #e5e7eb;
+        --border-strong: #cbd5e1;
+        --text: #0f172a;
+        --muted: #64748b;
+        --accent: #1e40af;
+        --accent-soft: #eff6ff;
+        --allow: #047857;
+        --warn: #b45309;
+        --block: #b91c1c;
+        --mono:
+          "JetBrains Mono", "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco,
+          Consolas, monospace;
+      }
+
+      body {
+        background: var(--bg);
+      }
+
+      .chat {
+        border-right: 1px solid var(--border);
+        background: var(--surface);
+      }
+
+      header,
+      form {
+        padding: 12px 14px;
+        border-color: var(--border);
+        background: var(--surface);
+      }
+
+      header strong {
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      details.system-prompt {
+        border-color: var(--border);
+        background: var(--surface);
+      }
+
+      details.system-prompt > summary {
+        color: var(--muted);
+        font-size: 13px;
+        list-style: revert;
+      }
+
+      details.system-prompt > summary::before,
+      details.system-prompt[open] > summary::before,
+      .trace-card > summary::before,
+      .trace-card[open] > summary::before,
+      .pred-detail summary::before,
+      .pred-detail[open] summary::before {
+        content: none;
+      }
+
+      details.system-prompt > summary::-webkit-details-marker,
+      .trace-card > summary::-webkit-details-marker,
+      .pred-detail summary::-webkit-details-marker {
+        display: inline-block;
+      }
+
+      select,
+      input,
+      textarea {
+        border: 1px solid var(--border-strong);
+        border-radius: 4px;
+        color: var(--text);
+        font-size: 13px;
+      }
+
+      textarea {
+        line-height: 1.45;
+      }
+
+      button {
+        border: 1px solid var(--accent);
+        border-radius: 4px;
+        background: var(--accent);
+        font-size: 13px;
+        font-weight: 500;
+      }
+
+      .messages {
+        padding: 18px 14px;
+        background: var(--surface);
+      }
+
+      .message {
+        max-width: 860px;
+        margin-bottom: 14px;
+        padding: 0;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        color: var(--text);
+        font-size: 14px;
+        line-height: 1.5;
+      }
+
+      .message.user {
+        background: transparent;
+      }
+
+      .meta {
+        margin-bottom: 5px;
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 11px;
+        text-transform: uppercase;
+      }
+
+      .badge {
+        border: 1px solid var(--border);
+        border-radius: 3px;
+        background: var(--surface);
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 10px;
+        font-weight: 500;
+      }
+
+      .trace-card {
+        margin-top: 8px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        background: var(--surface);
+        font-size: 12px;
+      }
+
+      .trace-card > summary {
+        padding: 7px 9px;
+        gap: 8px;
+        list-style: revert;
+      }
+
+      .verdict-pill {
+        min-height: 18px;
+        padding: 1px 6px;
+        border: 1px solid currentColor;
+        border-radius: 3px;
+        background: transparent;
+        font-family: var(--mono);
+        font-size: 10px;
+        line-height: 1;
+      }
+
+      .verdict-pill.allow {
+        color: var(--allow);
+        background: transparent;
+      }
+
+      .verdict-pill.warn {
+        color: var(--warn);
+        background: transparent;
+      }
+
+      .verdict-pill.block {
+        color: var(--block);
+        background: transparent;
+      }
+
+      .trace-card .summary-meta {
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 11px;
+      }
+
+      .trace-card .summary-fired {
+        color: var(--text);
+        font-weight: 500;
+      }
+
+      .trace-detail {
+        border-top: 1px solid var(--border);
+        padding: 9px;
+        gap: 10px;
+      }
+
+      .trace-phases-grid {
+        gap: 10px;
+        grid-template-columns: 1fr;
+      }
+
+      .phase-block {
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        background: var(--surface);
+        padding: 8px;
+      }
+
+      .phase-header {
+        margin-bottom: 6px;
+        flex-wrap: wrap;
+      }
+
+      .phase-header strong,
+      .phase-block strong {
+        color: var(--text);
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .pred-table {
+        font-size: 12px;
+      }
+
+      .pred-table th,
+      .pred-table td {
+        border-top: 1px solid var(--border);
+        padding: 5px 6px;
+      }
+
+      .pred-table th {
+        color: var(--muted);
+        font-size: 11px;
+        background: var(--surface-muted);
+      }
+
+      .pred-table td {
+        font-family: var(--mono);
+      }
+
+      .pred-table td:last-child {
+        font-family: inherit;
+      }
+
+      .pred-detail summary {
+        list-style: revert;
+        color: var(--text);
+      }
+
+      .pred-detail pre,
+      .events-pre {
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        background: var(--surface-muted);
+        color: var(--text);
+        font-family: var(--mono);
+      }
+
+      .pred-block-label {
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 10px;
+        letter-spacing: 0.04em;
+      }
+
+      .empty-trace {
+        color: var(--muted);
+        font-style: normal;
+      }
+
+      iframe {
+        background: var(--bg);
+      }
+
+      main {
+        background: #151716;
+      }
+
+      .chat {
+        position: relative;
+        background:
+          radial-gradient(circle at 52% 4%, rgba(255, 255, 255, 0.16), transparent 26%),
+          linear-gradient(180deg, #05080c 0%, #03060a 100%);
+        color: #f8fafc;
+      }
+
+      .chat::before {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background:
+          linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px) 0 0 / 120px 100%,
+          linear-gradient(180deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px) 0 0 / 100% 120px;
+        opacity: 0.35;
+        content: "";
+      }
+
+      .chat > * {
+        position: relative;
+        z-index: 1;
+      }
+
+      header,
+      form,
+      details.system-prompt {
+        border-color: rgba(255, 255, 255, 0.08);
+        background: transparent;
+      }
+
+      header strong {
+        color: #f8fafc;
+        font-size: 16px;
+      }
+
+      select,
+      input,
+      textarea {
+        border-color: rgba(255, 255, 255, 0.14);
+        background: rgba(255, 255, 255, 0.035);
+        color: #f8fafc;
+      }
+
+      select:focus,
+      input:focus,
+      textarea:focus,
+      button:focus-visible {
+        outline: 2px solid rgba(148, 163, 184, 0.22);
+        outline-offset: 1px;
+        border-color: rgba(255, 255, 255, 0.28);
+      }
+
+      select option {
+        color: #0f172a;
+      }
+
+      details.system-prompt > summary,
+      .meta,
+      .empty-state span {
+        color: rgba(248, 250, 252, 0.56);
+      }
+
+      details.system-prompt textarea {
+        background: rgba(255, 255, 255, 0.045);
+      }
+
+      .messages {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        padding: 28px;
+        background: transparent;
+      }
+
+      .messages.has-messages {
+        justify-content: flex-start;
+      }
+
+      .empty-state {
+        width: min(760px, 100%);
+        margin: 0 auto 28px;
+        text-align: center;
+      }
+
+      .messages.has-messages .empty-state {
+        display: none;
+      }
+
+      .empty-state span {
+        display: block;
+        margin-bottom: 18px;
+        font-size: 12px;
+        font-weight: 500;
+      }
+
+      .empty-state h1 {
+        margin: 0;
+        color: rgba(248, 250, 252, 0.86);
+        font-size: clamp(26px, 3.6vw, 42px);
+        font-weight: 600;
+        letter-spacing: 0;
+      }
+
+      form {
+        width: min(760px, calc(100% - 56px));
+        margin: 0 auto 28px;
+        align-items: flex-end;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.075);
+        box-shadow: 0 18px 44px rgba(0, 0, 0, 0.28);
+      }
+
+      form textarea {
+        min-height: 60px;
+        border: 0;
+        background: transparent;
+        color: #f8fafc;
+        font-size: 15px;
+      }
+
+      form textarea::placeholder {
+        color: rgba(248, 250, 252, 0.35);
+      }
+
+      form button {
+        min-width: 58px;
+        height: 38px;
+        border-color: rgba(255, 255, 255, 0.16);
+        background: rgba(255, 255, 255, 0.08);
+        color: #f8fafc;
+      }
+
+      form button:hover {
+        background: rgba(255, 255, 255, 0.13);
+      }
+
+      .message {
+        width: min(860px, 100%);
+        color: rgba(248, 250, 252, 0.9);
+      }
+
+      .message.user {
+        margin-left: auto;
+      }
+
+      .message > div:last-child {
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.045);
+        padding: 10px 12px;
+      }
+
+      .badge,
+      .trace-card,
+      .phase-block {
+        border-color: rgba(255, 255, 255, 0.1);
+        background: rgba(255, 255, 255, 0.045);
+      }
+
+      .trace-detail,
+      .pred-table th,
+      .pred-table td {
+        border-color: rgba(255, 255, 255, 0.09);
+      }
+
+      .pred-table th {
+        background: rgba(255, 255, 255, 0.045);
+      }
+
+      .phase-header strong,
+      .phase-block strong,
+      .trace-card .summary-fired,
+      .pred-detail summary {
+        color: rgba(248, 250, 252, 0.9);
+      }
+
+      .trace-card .summary-meta,
+      .pred-table th,
+      .pred-block-label,
+      .empty-trace {
+        color: rgba(248, 250, 252, 0.52);
+      }
+
+      .pred-detail pre,
+      .events-pre {
+        border-color: rgba(255, 255, 255, 0.09);
+        background: rgba(0, 0, 0, 0.22);
+        color: rgba(248, 250, 252, 0.86);
+      }
+
+      .pred-detail {
+        display: grid;
+        gap: 6px;
+      }
+
+      .pred-detail pre:empty,
+      .pred-detail .empty-detail {
+        display: none;
+      }
+
+      .override-button {
+        border-color: rgba(255, 255, 255, 0.12);
+        background: rgba(255, 255, 255, 0.06);
+        color: rgba(248, 250, 252, 0.9);
+      }
+
+      .override-status {
+        color: rgba(248, 250, 252, 0.58);
+      }
+
+      .override-status.error {
+        color: #fca5a5;
+      }
+
+      @media (max-width: 900px) {
+        form {
+          width: calc(100% - 28px);
+          margin-bottom: 14px;
+          border-radius: 12px;
+        }
+
+        .messages {
+          padding: 18px 14px;
+        }
+
+        .trace-phases-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="chat">
+        <header>
+          <strong>EnfGuard Chat</strong>
+          <span class="badge" id="sid"></span>
+          <select id="provider" aria-label="Provider">
+            <option value="openai">OpenAI</option>
+            <option value="anthropic">Anthropic</option>
+            <option value="ollama">Ollama</option>
+          </select>
+          <input id="model" aria-label="Model" value="gpt-4o-mini" />
+        </header>
+        <details class="system-prompt">
+          <summary>System prompt (sent every turn; logged as a SystemPrompt event)</summary>
+          <textarea
+            id="system-prompt"
+            placeholder="Optional. Leave blank to skip. The proxy will emit one SystemPrompt(tid, content, tokens) event per turn so policies can match on it."
+          ></textarea>
+        </details>
+        <section class="messages" id="messages">
+          <div class="empty-state">
+            <span>EnfGuard Chat</span>
+          </div>
+        </section>
+        <form id="form">
+          <textarea id="input" aria-label="Message" placeholder="Type a message"></textarea>
+          <button id="send" type="submit">Send</button>
+        </form>
+      </section>
+      <iframe id="enforcement" title="Enforcement"></iframe>
+    </main>
+    <script>
+      // Best-effort local demo id; production clients should provide X-Session-ID.
+      const sid = crypto.randomUUID ? crypto.randomUUID() : String(Date.now());
+      const messages = [];
+      const sidBadge = document.querySelector("#sid");
+      const list = document.querySelector("#messages");
+      const form = document.querySelector("#form");
+      const input = document.querySelector("#input");
+      const send = document.querySelector("#send");
+      const provider = document.querySelector("#provider");
+      const model = document.querySelector("#model");
+      const systemPrompt = document.querySelector("#system-prompt");
+      const iframe = document.querySelector("#enforcement");
+      const enforcementPath = "/enforcement";
+      const pageParams = new URLSearchParams(window.location.search);
+      const modelDefaults = {
+        openai: "gpt-4o-mini",
+        anthropic: "claude-3-5-haiku-latest",
+        ollama: "qwen2.5:0.5b",
+      };
+
+      sidBadge.textContent = `sid ${sid.slice(0, 8)}`;
+      const enforcementParams = new URLSearchParams({ sid });
+      if (pageParams.get("admin_token")) {
+        enforcementParams.set("admin_token", pageParams.get("admin_token"));
+      }
+      iframe.src = `${enforcementPath}?${enforcementParams.toString()}`;
+
+      iframe.addEventListener("load", () => {
+        try {
+          const doc = iframe.contentDocument;
+          if (doc && /frontend_not_built|not built/i.test(doc.body.textContent || "")) {
+            doc.body.innerHTML =
+              "<main style='font-family:system-ui;padding:20px'>Run <code>cd frontend && npm install && npm run build</code>, then restart the proxy.</main>";
+          }
+        } catch {}
+      });
+
+      provider.addEventListener("change", () => {
+        model.value = modelDefaults[provider.value] || model.value;
+      });
+
+      input.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" || event.shiftKey || event.isComposing) {
+          return;
+        }
+        event.preventDefault();
+        if (!send.disabled) {
+          form.requestSubmit();
+        }
+      });
+
+      // Persist the admin token in localStorage so trace fetches work even
+      // if the page was opened without `?admin_token=` (the iframe page
+      // already does this; we mirror it here for the chat-side trace probe).
+      const storedToken = pageParams.get("admin_token") || window.localStorage.getItem("enfguard_admin_token") || "";
+      if (storedToken) window.localStorage.setItem("enfguard_admin_token", storedToken);
+
+      function adminHeader() {
+        return storedToken ? { "x-admin-token": storedToken } : {};
+      }
+
+      function addMessage(role, text, action = "", reason = "", tid = "") {
+        list.classList.add("has-messages");
+        const node = document.createElement("article");
+        node.className = `message ${role}`;
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        meta.textContent = role;
+        if (action) {
+          const badge = document.createElement("span");
+          badge.className = "badge";
+          badge.textContent = action;
+          if (reason) badge.title = reason;
+          meta.appendChild(badge);
+        }
+        const body = document.createElement("div");
+        body.textContent = text || "";
+        node.append(meta, body);
+
+        // Per-turn trace card. We only render it for assistant messages
+        // (user messages have nothing to inspect on this side). Loaded
+        // lazily on first expansion so a session of 50 turns doesn't
+        // hammer the proxy with /trace/{tid} requests up front.
+        if (role === "assistant" && tid) {
+          node.appendChild(createTraceCard(tid, action));
+        }
+
+        list.appendChild(node);
+        list.scrollTop = list.scrollHeight;
+      }
+
+      function createTraceCard(tid, action) {
+        const card = document.createElement("details");
+        card.className = "trace-card";
+        const summary = document.createElement("summary");
+        const verdict = document.createElement("span");
+        verdict.className = `verdict-pill ${verdictKind(action)}`;
+        verdict.textContent = verdictLabel(action);
+        const tidSpan = document.createElement("strong");
+        tidSpan.textContent = `T${tid}`;
+        const fired = document.createElement("span");
+        fired.className = "summary-fired";
+        fired.textContent = "loading...";
+        const meta = document.createElement("span");
+        meta.className = "summary-meta";
+        meta.textContent = "click to inspect";
+        summary.append(verdict, tidSpan, fired, meta);
+        card.appendChild(summary);
+
+        const detail = document.createElement("div");
+        detail.className = "trace-detail";
+        detail.textContent = "Loading trace…";
+        card.appendChild(detail);
+
+        let loaded = false;
+        async function load() {
+          if (loaded) return;
+          loaded = true;
+          try {
+            const res = await fetch(`/trace/${encodeURIComponent(tid)}`, {
+              headers: { "content-type": "application/json", ...adminHeader() },
+            });
+            if (!res.ok) {
+              throw new Error(`trace fetch failed: ${res.status}`);
+            }
+            const trace = await res.json();
+            renderTrace(detail, summary, fired, meta, trace);
+          } catch (err) {
+            detail.textContent = String(err.message || err);
+          }
+        }
+
+        // Refresh the compact summary even before the user expands the
+        // card, so the assistant message instantly shows which policies
+        // fired without forcing a click. Detailed view still loads
+        // lazily on expand.
+        load();
+        card.addEventListener("toggle", () => {
+          if (card.open) load();
+        });
+        return card;
+      }
+
+      function renderTrace(detail, summary, fired, meta, trace) {
+        const phases = Array.isArray(trace.phases) ? trace.phases : [];
+        const firedNames = [];
+        let totalMs = 0;
+        for (const phase of phases) {
+          for (const entry of phase.fired_predicates || []) {
+            if (entry.predicate) firedNames.push(entry.predicate);
+          }
+          totalMs += Number(phase.wall_ms || 0);
+        }
+        fired.textContent = firedNames.length
+          ? `${firedNames.join(", ")}`
+          : "no policy fired";
+        meta.textContent = `${totalMs}ms`;
+
+        detail.textContent = "";
+        if (!phases.length) {
+          const note = document.createElement("div");
+          note.className = "empty-trace";
+          note.textContent = "No predicate rows for this turn yet.";
+          detail.appendChild(note);
+          return;
+        }
+        const rows = Array.isArray(trace.predicate_rows) ? trace.predicate_rows : [];
+        const phaseGrid = document.createElement("div");
+        phaseGrid.className = "trace-phases-grid";
+        for (const phase of phases) {
+          phaseGrid.appendChild(renderPhase(trace.tid, phase, rows.filter((r) => r.phase === phase.phase)));
+        }
+        detail.appendChild(phaseGrid);
+        const eventsBlock = renderEvents(trace.session_records || []);
+        if (eventsBlock) detail.appendChild(eventsBlock);
+      }
+
+      function renderEvents(sessionRecords) {
+        // Walk the session records for this tid and surface the EnfGuard
+        // event log: chat events that went into the engine plus the
+        // verdict events (RequestAllowed, ResponseAllowed, etc.) the
+        // proxy wrote back. Empty if the proxy didn't get to write a
+        // session record (e.g. an upstream-only error).
+        const groups = { inbound: [], verdict: [], outbound: [] };
+        for (const record of sessionRecords) {
+          for (const event of record.inbound || []) groups.inbound.push(event);
+          for (const event of record.verdict_events || []) groups.verdict.push(event);
+          for (const event of record.outbound || []) groups.outbound.push(event);
+        }
+        if (!groups.inbound.length && !groups.verdict.length && !groups.outbound.length) {
+          return null;
+        }
+        const wrap = document.createElement("details");
+        wrap.className = "phase-block";
+        wrap.open = true;
+        const summary = document.createElement("summary");
+        summary.style.cursor = "pointer";
+        summary.style.listStyle = "revert";
+        summary.innerHTML = "<strong>Events</strong> <span class='summary-meta'>everything that fired in this turn</span>";
+        wrap.appendChild(summary);
+        const lists = document.createElement("div");
+        lists.style.display = "grid";
+        lists.style.gap = "8px";
+        for (const [label, events] of [
+          ["inbound (sent to EnfGuard)", groups.inbound],
+          ["verdict (proxy to EnfGuard)", groups.verdict],
+          ["outbound (sent to EnfGuard)", groups.outbound],
+        ]) {
+          if (!events.length) continue;
+          const sec = document.createElement("div");
+          const lbl = document.createElement("div");
+          lbl.className = "pred-block-label";
+          lbl.textContent = label;
+          sec.appendChild(lbl);
+          const pre = document.createElement("pre");
+          pre.className = "events-pre";
+          pre.style.margin = "2px 0 0";
+          pre.style.padding = "6px 8px";
+          pre.style.fontSize = "11px";
+          pre.style.whiteSpace = "pre-wrap";
+          pre.style.wordBreak = "break-word";
+          pre.textContent = events.map(formatEvent).join("\n");
+          sec.appendChild(pre);
+          lists.appendChild(sec);
+        }
+        wrap.appendChild(lists);
+        return wrap;
+      }
+
+      function formatEvent(event) {
+        const args = (event.args || []).map(formatEventArg).join(", ");
+        return `${event.name}(${args})`;
+      }
+
+      function formatEventArg(value) {
+        if (typeof value === "string") {
+          // Truncate long strings (chat content) so the events block stays
+          // scannable; full content is available in the predicate rows.
+          const trimmed = value.length > 80 ? `${value.slice(0, 80)}…` : value;
+          return JSON.stringify(trimmed);
+        }
+        return String(value);
+      }
+
+      function renderPhase(tid, phase, phaseRows) {
+        const wrap = document.createElement("div");
+        wrap.className = "phase-block";
+        const header = document.createElement("div");
+        header.className = "phase-header";
+        const verdict = document.createElement("span");
+        verdict.className = `verdict-pill ${verdictKind(phase.action)}`;
+        verdict.textContent = verdictLabel(phase.action);
+        const name = document.createElement("strong");
+        name.textContent = phase.phase;
+        const summaryMeta = document.createElement("span");
+        summaryMeta.className = "summary-meta";
+        // Show engine + judge time separately when we have them, fall back
+        // to the legacy summed `wall_ms` for older traces.
+        const engineMs = Number(phase.enfguard_ms || 0);
+        const judgeMs = Number(phase.judge_ms || 0);
+        const modelMs = Number(phase.upstream_ms || 0);
+        const totalMs = Number(phase.wall_ms || engineMs + judgeMs + modelMs);
+        const parts = [`enfguard ${engineMs}ms`, `judge ${judgeMs}ms`];
+        if (modelMs) parts.push(`model ${modelMs}ms`);
+        const breakdown = engineMs || judgeMs || modelMs
+          ? `${totalMs}ms (${parts.join(" · ")})`
+          : `${totalMs}ms`;
+        summaryMeta.textContent = `${phase.fired_predicates.length} fired · ${breakdown}`;
+        header.append(verdict, name, summaryMeta);
+        wrap.appendChild(header);
+
+        if (phaseRows.length) {
+          const table = document.createElement("table");
+          table.className = "pred-table";
+          const thead = document.createElement("thead");
+          thead.innerHTML =
+            "<tr><th>predicate</th><th>raw</th><th>fired</th><th>cache</th><th>latency</th><th>reason</th></tr>";
+          table.appendChild(thead);
+          const tbody = document.createElement("tbody");
+          for (const row of phaseRows) {
+            tbody.appendChild(renderPredicateRow(tid, row));
+          }
+          table.appendChild(tbody);
+          wrap.appendChild(table);
+        }
+        return wrap;
+      }
+
+      function renderPredicateRow(tid, row) {
+        const tr = document.createElement("tr");
+        const fired = Number(row.score || 0) >= 0.5;
+        const cached = Boolean(row.judge_cache_hit);
+
+        const predCell = document.createElement("td");
+        const predDetail = document.createElement("details");
+        predDetail.className = "pred-detail";
+        const predSummary = document.createElement("summary");
+        predSummary.textContent = row.predicate || "predicate";
+        predDetail.appendChild(predSummary);
+        let detailCount = 0;
+        detailCount += appendPromptBlock(predDetail, "judge_prompt", row.judge_prompt);
+        detailCount += appendPromptBlock(predDetail, "judge_raw_reply", row.judge_raw_reply);
+        detailCount += appendPromptBlock(predDetail, "content_preview", row.content_preview);
+        if (Array.isArray(row.reasons) && row.reasons.length) {
+          detailCount += appendPromptBlock(predDetail, "reasons", row.reasons.join("\n"));
+        }
+        if (!detailCount) {
+          const empty = document.createElement("span");
+          empty.className = "empty-detail";
+          empty.textContent = "";
+          predDetail.appendChild(empty);
+        }
+        predDetail.appendChild(renderJudgeOverride(tid, row, fired));
+        predCell.appendChild(predDetail);
+
+        const rawCell = document.createElement("td");
+        rawCell.textContent = Number(row.raw_score || 0).toFixed(2);
+        const firedCell = document.createElement("td");
+        firedCell.textContent = fired ? "yes" : "no";
+        if (fired) firedCell.className = "fired";
+        const cacheCell = document.createElement("td");
+        cacheCell.textContent = cached ? "hit" : "miss";
+        const latencyCell = document.createElement("td");
+        latencyCell.textContent = cached ? "0ms" : `${row.latency_ms || 0}ms`;
+        const reasonCell = document.createElement("td");
+        reasonCell.textContent = row.reason || "";
+
+        tr.append(predCell, rawCell, firedCell, cacheCell, latencyCell, reasonCell);
+        return tr;
+      }
+
+      function renderJudgeOverride(tid, row, fired) {
+        const wrap = document.createElement("div");
+        wrap.className = "judge-override";
+        const button = document.createElement("button");
+        button.className = "override-button";
+        button.type = "button";
+        button.textContent = "Flag judge";
+        const status = document.createElement("span");
+        status.className = "override-status";
+        status.textContent = "Writes an exact cache override and logs feedback.";
+        button.addEventListener("click", async () => {
+          const label = fired ? "false positive" : "false negative";
+          const reason = window.prompt(`Why should this judge result be marked as a ${label}?`);
+          if (reason === null) return;
+          button.disabled = true;
+          status.className = "override-status";
+          status.textContent = "Saving override...";
+          try {
+            const res = await fetch("/admin/judge_override", {
+              method: "POST",
+              headers: { "content-type": "application/json", ...adminHeader() },
+              body: JSON.stringify({
+                tid,
+                predicate: row.predicate,
+                phase: row.phase,
+                content_preview: row.content_preview,
+                raw_score: fired ? 0 : 1,
+                reason: reason.trim() || label,
+              }),
+            });
+            const payload = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(payload.detail || `override failed: ${res.status}`);
+            status.textContent = "Override saved for next matching request.";
+          } catch (err) {
+            status.className = "override-status error";
+            status.textContent = String(err.message || err);
+            button.disabled = false;
+          }
+        });
+        wrap.append(button, status);
+        return wrap;
+      }
+
+      function appendPromptBlock(parent, label, text) {
+        const value = String(text || "").trim();
+        if (!value) return 0;
+        const lbl = document.createElement("div");
+        lbl.className = "pred-block-label";
+        lbl.textContent = label;
+        const pre = document.createElement("pre");
+        pre.textContent = value;
+        parent.append(lbl, pre);
+        return 1;
+      }
+
+      function verdictKind(action) {
+        const text = String(action || "").toLowerCase();
+        if (text.includes("block")) return "block";
+        if (text.includes("warn")) return "warn";
+        return "allow";
+      }
+
+      function verdictLabel(action) {
+        const text = String(action || "");
+        if (!text) return "ALLOW";
+        if (text === "allowed") return "ALLOW";
+        if (text.startsWith("request_")) return text.slice("request_".length).toUpperCase();
+        if (text.startsWith("response_")) return text.slice("response_".length).toUpperCase();
+        return text.toUpperCase();
+      }
+
+      function assistantText(payload) {
+        const choice = payload && payload.choices && payload.choices[0];
+        if (choice && choice.message) return choice.message.content || "";
+        if (payload && Array.isArray(payload.content)) {
+          return payload.content
+            .map((item) => {
+              if (!item || typeof item !== "object") return "";
+              if (typeof item.text === "string") return item.text;
+              if (typeof item.content === "string") return item.content;
+              if (item.type) return `[${item.type}]`;
+              return "";
+            })
+            .filter(Boolean)
+            .join("\n");
+        }
+        return "(unparseable response)";
+      }
+
+      function safeDecodeHeader(value) {
+        try {
+          return decodeURIComponent(value || "");
+        } catch {
+          return value || "";
+        }
+      }
+
+      function notifyEnforcementTokenRefresh() {
+        try {
+          if (iframe && iframe.contentWindow) {
+            iframe.contentWindow.postMessage({ type: "enfguard:token_refresh" }, "*");
+          }
+        } catch {}
+      }
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const text = input.value.trim();
+        if (!text) return;
+        input.value = "";
+        send.disabled = true;
+        addMessage("user", text);
+        messages.push({ role: "user", content: text });
+
+        try {
+          const selected = provider.value;
+          let url = "/v1/chat/completions";
+          if (selected === "ollama") url = "/v1/chat/completions/ollama";
+          if (selected === "anthropic") url = "/v1/messages";
+
+          // System prompt routing: Anthropic uses a top-level `system` field,
+          // OpenAI/Ollama prepend `{role: "system"}` to the messages array.
+          // We never persist it into `messages` itself so the user can edit
+          // mid-session and the next turn picks up the change.
+          const systemText = (systemPrompt.value || "").trim();
+          let body;
+          if (selected === "anthropic") {
+            body = {
+              model: model.value,
+              max_tokens: 512,
+              messages,
+            };
+            if (systemText) body.system = systemText;
+          } else {
+            const turnMessages = systemText
+              ? [{ role: "system", content: systemText }, ...messages]
+              : messages;
+            body = {
+              model: model.value,
+              messages: turnMessages,
+            };
+          }
+
+          const response = await fetch(url, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-session-id": sid,
+              "x-provider": selected,
+            },
+            body: JSON.stringify(body),
+          });
+          const payload = await response.json();
+          const action = response.headers.get("x-enforcement-action") || "";
+          const reason = safeDecodeHeader(response.headers.get("x-enforcement-reason"));
+          const tid = response.headers.get("x-tid") || "";
+          const reply = assistantText(payload);
+          messages.push({ role: "assistant", content: reply });
+          addMessage("assistant", reply, action, reason, tid);
+        } catch (error) {
+          addMessage("assistant", String(error), "client_error");
+        } finally {
+          notifyEnforcementTokenRefresh();
+          send.disabled = false;
+          input.focus();
+        }
+      });
+    </script>
+  </body>
+</html>

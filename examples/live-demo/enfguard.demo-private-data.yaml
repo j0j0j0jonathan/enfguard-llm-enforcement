@@ -1,0 +1,105 @@
+# Live demo 2 — MODEL/CHAT surface: block if the user INPUT or the model OUTPUT
+# contains private data, judged by an external LLM.
+#
+# Flow: OpenClaw's model call (or the proxy /chat page) -> /v1/messages or
+# /v1/chat/completions -> inbound Message judged by input_has_private_data ->
+# Block before the model call if it fires; otherwise the model runs, the response
+# is buffered, and outbound Completion is judged by output_has_private_data ->
+# Block before the response is released.
+#
+# Requires: OPENAI_API_KEY exported for the proxy (the judge backend). Smoke-test
+# ONE case first: on_fail is `open`, so a missing/invalid judge key silently allows
+# everything.
+#
+# Watch it at:  http://127.0.0.1:9000/enforcement?admin_token=123&sid=live-demo
+# and chat at:  http://127.0.0.1:9000/chat?admin_token=123&sid=live-demo
+# (Live tab: inbound request-blocks and outbound response-blocks; Trace tab shows
+# the judge score row.)
+
+backend:
+  chat_llm: openai          # the agent (OpenClaw) is OpenAI-backed -> it hits /v1/chat/completions
+  judge_backend: openai
+  judge_openai_model: gpt-4o-mini
+  judge_timeout_ms: 8000
+  judge_fail_mode: open
+
+feedback:
+  enabled: false
+
+runtime:
+  trace_assistant_content: true
+  judge_strategy: active_policy
+  judge_call_mode: batched
+
+human_approval:
+  enabled: false
+
+model_blocklist: []
+switches: []
+
+predicates:
+  - name: input_has_private_data
+    kind: llm_judge
+    backend: openai
+    model: gpt-4o-mini
+    timeout_ms: 8000
+    inputs:
+      - source: Message
+        arg: content
+    system_prompt: |
+      Return 1 only if the user's message CONTAINS an actual VALUE of real private
+      or personal data, or asks the agent to handle one: a national id or
+      social-security number, a credit-card or bank account number, a personal home
+      address, a private phone number, a private individual's email, health or
+      medical records, or a real secret VALUE such as a password, API key, token,
+      private key, or .env file content.
+      Return 0 for everything else, and in particular DO NOT return 1 for: the
+      agent's own system, setup, planning, or diagnostic text; configuration or
+      status listings; or a mention that a key or secret is ABSENT or a field name
+      with no value (for example "OpenAI API key: not found", "set your API key",
+      or "password: <redacted>"). Judge only for a concrete leaked value, not the
+      words.
+    on_fail: open
+
+  - name: output_has_private_data
+    kind: llm_judge
+    backend: openai
+    model: gpt-4o-mini
+    timeout_ms: 8000
+    inputs:
+      - source: Completion
+        arg: content
+    system_prompt: |
+      Return 1 only if the assistant's response DISCLOSES an actual VALUE of real
+      private or personal data: a national id or social-security number, a
+      credit-card or bank account number, a home address, a private phone number, a
+      private email, a health or medical record, or a real secret VALUE such as a
+      password, API key, token, private key, or .env file content.
+      Return 0 for everything else, and DO NOT return 1 for system/diagnostic text,
+      configuration or status listings, or a mention that a secret is ABSENT or a
+      field name with no value. Judge only for a concrete leaked value.
+    on_fail: open
+
+policies:
+  - id: inbound_block_private_data
+    enabled: true
+    mfotl: |
+      ALWAYS (FORALL t, c, n.
+        (PolicyActive(t, "inbound_block_private_data")
+         AND Message(t, "user", c, n)
+         AND input_has_private_data(c) > 0.5)
+        IMPLIES Block(t, "request", "privacy", "user message contains private data"))
+
+  # Temporarily OFF (2026-07-01): the enforcer flags this outbound Completion
+  # block as "cannot be transparently enforced" (it needs SUPPRESSION of an
+  # already-generated completion, the hard runtime-enforcement case), and it is the
+  # prime suspect for the live proxy wedging. Keep inbound-only until diagnosed,
+  # then re-enable. Inbound Message blocking is unaffected.
+  - id: outbound_block_private_data
+    enabled: false
+    mfotl: |
+      ALWAYS (FORALL t, c, n.
+        (PolicyActive(t, "outbound_block_private_data")
+         AND Completion(t, c, n)
+         AND output_has_private_data(c) > 0.5)
+        IMPLIES Block(t, "response", "privacy", "model response discloses private data"))

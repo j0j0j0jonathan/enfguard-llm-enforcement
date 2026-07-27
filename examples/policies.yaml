@@ -1,0 +1,57 @@
+# Policy snippets. Copy individual entries into `policies:`.
+
+policies:
+  - id: warn_invoice_terms
+    enabled: true
+    mfotl: |
+      ALWAYS (FORALL t, c, n.
+        (PolicyActive(t, "warn_invoice_terms")
+         AND Message(t, "user", c, n)
+         AND mentions_invoice(c) > 0.5)
+        IMPLIES Warn(t, "request", "business", "message mentions invoice or IBAN"))
+
+  - id: block_secrets_in_prompt
+    enabled: true
+    mfotl: |
+      ALWAYS (FORALL t, c, n.
+        (PolicyActive(t, "block_secrets_in_prompt")
+         AND Message(t, "user", c, n)
+         AND contains_secrets(c) > 0.5)
+        IMPLIES Block(t, "request", "secrets", "prompt appears to contain a secret"))
+
+  - id: require_approval_for_sensitive_output
+    enabled: false
+    mfotl: |
+      ALWAYS (FORALL t, c, n.
+        (PolicyActive(t, "require_approval_for_sensitive_output")
+         AND Completion(t, c, n)
+         AND confidential_information(c) > 0.5)
+        IMPLIES Approve(t, "request", "Release sensitive output?"))
+
+  - id: block_model_blocklist
+    enabled: true
+    mfotl: |
+      ALWAYS (FORALL t, provider, model.
+        (PolicyActive(t, "block_model_blocklist")
+         AND ModelSelection(t, provider, model)
+         AND model_blocklist(model) > 0.5)
+        IMPLIES Block(t, "request", "model", "selected model is blocked"))
+
+  - id: rate_limit_3_requests_3min
+    enabled: false
+    mfotl: |
+      ALWAYS (FORALL t, s, ms_now.
+        (PolicyActive(t, "rate_limit_3_requests_3min")
+         AND (EXISTS r_1. Turn(t, r_1, s))
+         AND Clock(t, "request", ms_now)
+         AND ONCE [1, 1000] (EXISTS t1, ms1.
+           (EXISTS r_2. Turn(t1, r_2, s))
+           AND Clock(t1, "request", ms1)
+           AND PolicyActive(t1, "rate_limit_3_requests_3min")
+           AND wall_ms_within(ms_now, ms1, 180000) > 0.5
+           AND ONCE [1, 1000] (EXISTS t2, ms2.
+             (EXISTS r_3. Turn(t2, r_3, s))
+             AND Clock(t2, "request", ms2)
+             AND PolicyActive(t2, "rate_limit_3_requests_3min")
+             AND wall_ms_within(ms_now, ms2, 180000) > 0.5)))
+        IMPLIES Block(t, "request", "rate_limit", "max 2 requests per 3 minutes"))

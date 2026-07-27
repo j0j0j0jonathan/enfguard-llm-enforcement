@@ -1,0 +1,158 @@
+# OpenClaw category 12 (Exfiltration)
+#
+# Exfiltration is data egress from the current environment. The mapper emits:
+#   Classify(action_class, "exfiltration")
+#   Classify(exfil_kind, upload | external_post | dns_tunnel | icmp_tunnel)
+#   Classify(network_risk, trusted | external | suspicious | loopback), where applicable
+#     ("loopback" = sink is the local host 127.0.0.1/::1/localhost; gated like
+#      "external" at Approve, labelled honestly since bytes do not leave the host)
+#
+# Policy design:
+#   * DNS and ICMP covert channels -> Block
+#   * egress to a known suspicious sink -> Block
+#   * ordinary external upload -> Approve
+#   * any egress within 120 seconds after a same-session credential access or
+#     observed secret -> Block
+#
+# The temporal rules are conservative session taint, not byte-level data flow.
+# Both access-based rules require a prior gated ToolPlanned event. The
+# result-based rule binds the prior content-risk fact to ToolResult.
+
+backend:
+  chat_llm: anthropic
+  judge_backend: openai
+  judge_timeout_ms: 1000
+  judge_fail_mode: open
+  trusted_tool_names: []
+  ingest_judges:
+    enabled: true
+    unknown_tool: false
+    url_risk: true
+    persistence_instruction: false
+    secret_material: true
+    uncertain_action: false
+    package_name: false
+    webshell: false
+
+runtime:
+  judge_strategy: "off"
+  judge_call_mode: batched
+  trace_assistant_content: true
+
+feedback:
+  enabled: false
+
+human_approval:
+  enabled: true
+  timeout_seconds: 60
+  on_timeout: block
+
+model_blocklist: []
+switches: []
+predicates: []
+
+policies:
+  - id: exfiltration_v1
+    enabled: true
+    mfotl: |
+      {"exfil_dns_tunnel"}{
+      ALWAYS (FORALL t, call_id, tool, input.
+        (PolicyActive(t, "exfiltration_v1")
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "action_class", "exfiltration")
+         AND Classify(t, call_id, "exfil_kind", "dns_tunnel"))
+        IMPLIES:R Block(t, "tool", "exfil_dns_tunnel", "DNS covert channel smuggling encoded data"))
+      }
+
+      AND
+
+      {"exfil_icmp_tunnel"}{
+      ALWAYS (FORALL t, call_id, tool, input.
+        (PolicyActive(t, "exfiltration_v1")
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "action_class", "exfiltration")
+         AND Classify(t, call_id, "exfil_kind", "icmp_tunnel"))
+        IMPLIES:R Block(t, "tool", "exfil_icmp_tunnel", "ICMP covert channel smuggling encoded data"))
+      }
+
+      AND
+
+      {"exfil_authored_dataflow"}{
+      ALWAYS (FORALL t, call_id, tool, input.
+        (PolicyActive(t, "exfiltration_v1")
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "action_class", "exfiltration")
+         AND Classify(t, call_id, "exfil_kind", "authored_exfil"))
+        IMPLIES:R Block(t, "tool", "exfil_authored_dataflow", "authored file writes code that reads a secret and sends it (deferred-execution exfiltration)"))
+      }
+
+      AND
+
+      {"exfil_suspicious_sink"}{
+      ALWAYS (FORALL t, call_id, tool, input.
+        (PolicyActive(t, "exfiltration_v1")
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "action_class", "exfiltration")
+         AND Classify(t, call_id, "network_risk", "suspicious"))
+        IMPLIES:R Block(t, "tool", "exfil_suspicious_sink", "data egress to a known suspicious/exfil sink"))
+      }
+
+      AND
+
+      {"exfil_external_sink"}{
+      ALWAYS (FORALL t, call_id, tool, input.
+        (PolicyActive(t, "exfiltration_v1")
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "action_class", "exfiltration")
+         AND (Classify(t, call_id, "network_risk", "external")
+              OR Classify(t, call_id, "network_risk", "loopback")))
+        IMPLIES:R Approve(t, "tool", "exfil_external_sink"))
+      }
+
+      AND
+
+      {"sensitive_path_exfiltration"}{
+      ALWAYS (FORALL t, rid, s, call_id, tool, input.
+        (PolicyActive(t, "exfiltration_v1")
+         AND Turn(t, rid, s)
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "action_class", "exfiltration")
+         AND ONCE [0, 120] (EXISTS t2, r2, c2, tool2, input2.
+              Turn(t2, r2, s)
+              AND NOT (t = t2)
+              AND ToolPlanned(t2, c2, tool2, input2)
+              AND Classify(t2, c2, "path_sensitivity", "credentials")))
+        IMPLIES:R Block(t, "tool", "sensitive_exfiltration", "sensitive read precedes external sink"))
+      }
+
+      AND
+
+      {"credential_access_exfiltration"}{
+      ALWAYS (FORALL t, rid, s, call_id, tool, input.
+        (PolicyActive(t, "exfiltration_v1")
+         AND Turn(t, rid, s)
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "action_class", "exfiltration")
+         AND ONCE [0, 120] (EXISTS t2, r2, c2, tool2, input2.
+              Turn(t2, r2, s)
+              AND NOT (t = t2)
+              AND ToolPlanned(t2, c2, tool2, input2)
+              AND Classify(t2, c2, "action_class", "credential_access")))
+        IMPLIES:R Block(t, "tool", "sensitive_exfiltration", "credential access precedes external sink"))
+      }
+
+      AND
+
+      {"secret_result_exfiltration"}{
+      ALWAYS (FORALL t, rid, s, call_id, tool, input.
+        (PolicyActive(t, "exfiltration_v1")
+         AND Turn(t, rid, s)
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "action_class", "exfiltration")
+         AND ONCE [0, 120] (EXISTS t2, r2, c2, content2, exit_code2.
+              Turn(t2, r2, s)
+              AND NOT (t = t2)
+              AND ToolResult(t2, c2, content2, exit_code2)
+              AND Classify(t2, c2, "content_risk", "secret_material")))
+        IMPLIES:R Block(t, "tool", "sensitive_exfiltration", "secret material observed before external sink"))
+      }

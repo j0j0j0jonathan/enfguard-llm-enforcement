@@ -1,0 +1,104 @@
+# OpenClaw category 5 (Persistence) 
+
+backend:
+  chat_llm: anthropic
+  judge_backend: openai
+  judge_timeout_ms: 1000
+  judge_fail_mode: open
+  trusted_tool_names: []
+  # Ingest-time judges are independent from runtime.judge_strategy. Only the
+  # two adapters useful to this standalone category are enabled.
+  ingest_judges:
+    enabled: true
+    unknown_tool: false
+    url_risk: false
+    persistence_instruction: true
+    secret_material: false
+    uncertain_action: true
+    package_name: false
+    webshell: false
+
+runtime:
+  judge_strategy: "off"
+  judge_call_mode: batched
+  trace_assistant_content: true
+
+feedback:
+  enabled: false
+
+human_approval:
+  enabled: true
+  timeout_seconds: 60
+  on_timeout: block
+
+model_blocklist: []
+switches: []
+
+predicates: []
+
+policies:
+  - id: persistence_v1
+    enabled: true
+    mfotl: |
+      {"persistence_backdoor"}{
+      ALWAYS (FORALL t, call_id, tool, input.
+        (PolicyActive(t, "persistence_v1")
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "action_class", "persistence")
+         AND (Classify(t, call_id, "persistence_kind", "ssh_key")
+              OR Classify(t, call_id, "persistence_kind", "sudoers")
+              OR Classify(t, call_id, "persistence_kind", "scheduled_task")
+              OR Classify(t, call_id, "persistence_kind", "service")
+              OR Classify(t, call_id, "persistence_kind", "module_hijack")))
+        IMPLIES:R Block(t, "tool", "persistence_backdoor", "write installs a persistence foothold (keys/sudoers/cron/service/import-hook)"))
+      }
+
+      AND
+
+      {"scheduled_backup_approval"}{
+      ALWAYS (FORALL t, call_id, tool, input.
+        (PolicyActive(t, "persistence_v1")
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "action_class", "persistence")
+         AND Classify(t, call_id, "persistence_kind", "scheduled_backup"))
+        IMPLIES:R Approve(t, "tool", "scheduled_backup"))
+      }
+
+      AND
+
+      {"scheduled_routine_approval"}{
+      ALWAYS (FORALL t, call_id, tool, input.
+        (PolicyActive(t, "persistence_v1")
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "action_class", "persistence")
+         AND Classify(t, call_id, "persistence_kind", "scheduled_routine"))
+        IMPLIES:R Approve(t, "tool", "scheduled_routine"))
+      }
+
+      AND
+
+      {"persistence_profile_change"}{
+      ALWAYS (FORALL t, call_id, tool, input.
+        (PolicyActive(t, "persistence_v1")
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "action_class", "persistence")
+         AND (Classify(t, call_id, "persistence_kind", "shell_init")
+              OR Classify(t, call_id, "persistence_kind", "autostart")))
+        IMPLIES:R Approve(t, "tool", "persistence_profile_change"))
+      }
+
+      AND
+
+      {"untrusted_authorization"}{
+      ALWAYS (FORALL t, rid, s, call_id, tool, input.
+        (PolicyActive(t, "persistence_v1")
+         AND Turn(t, rid, s)
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "action_class", "persistence")
+         AND ONCE [0, 300] (EXISTS t2, r2, c2, content, exit_code.
+              Turn(t2, r2, s)
+              AND ToolResult(t2, c2, content, exit_code)
+              AND NOT (t = t2)
+              AND Classify(t2, c2, "content_risk", "persistence_instruction")))
+        IMPLIES:R Block(t, "tool", "untrusted_authorization", "persistence action follows an injected persistence instruction"))
+      }

@@ -1,0 +1,77 @@
+# OpenClaw category 6 (Privilege Escalation)
+
+backend:
+  chat_llm: anthropic
+  judge_backend: openai
+  judge_timeout_ms: 1000
+  judge_fail_mode: open
+  trusted_tool_names: []
+  # Deliberately deterministic-only. Persuasive framing must never affect the privilege verdict, so no ingest judge is used for this category.
+  ingest_judges:
+    enabled: false
+    unknown_tool: false
+    url_risk: false
+    persistence_instruction: false
+    secret_material: false
+    uncertain_action: false
+    package_name: false
+    webshell: false
+
+runtime:
+  judge_strategy: "off"       
+  judge_call_mode: batched
+  trace_assistant_content: true
+
+feedback:
+  enabled: false
+
+human_approval:
+  enabled: true
+  timeout_seconds: 60
+  on_timeout: block
+
+model_blocklist: []
+switches: []
+
+predicates: []
+
+policies:
+  - id: privilege_escalation_v1
+    enabled: true
+    mfotl: |
+      {"privilege_change"}{
+      ALWAYS (FORALL t, call_id, tool, input.
+        (PolicyActive(t, "privilege_escalation_v1")
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "action_class", "privilege_escalation")
+         AND Classify(t, call_id, "priv_action", "change"))
+        IMPLIES:R Approve(t, "tool", "privilege_change"))
+      }
+
+      AND
+
+      {"privilege_enumeration"}{
+      ALWAYS (FORALL t, call_id, tool, input.
+        (PolicyActive(t, "privilege_escalation_v1")
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "action_class", "privilege_escalation")
+         AND Classify(t, call_id, "priv_action", "enumerate"))
+        IMPLIES:R Warn(t, "tool", "privilege_enumeration", "privilege enumeration (SUID/sudoers/capabilities) flagged"))
+      }
+
+      AND
+
+      {"privilege_change_after_injection"}{
+      ALWAYS (FORALL t, rid, s, call_id, tool, input.
+        (PolicyActive(t, "privilege_escalation_v1")
+         AND Turn(t, rid, s)
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "action_class", "privilege_escalation")
+         AND Classify(t, call_id, "priv_action", "change")
+         AND ONCE [0, 300] (EXISTS t2, r2, c2, content2, exit_code2.
+              Turn(t2, r2, s)
+              AND NOT (t = t2)
+              AND ToolResult(t2, c2, content2, exit_code2)
+              AND Classify(t2, c2, "content_risk", "instruction_like")))
+        IMPLIES:R Block(t, "tool", "privilege_change_after_injection", "privilege change follows untrusted instruction-like content"))
+      }

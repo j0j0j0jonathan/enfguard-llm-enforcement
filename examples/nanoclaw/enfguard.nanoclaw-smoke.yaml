@@ -1,0 +1,28 @@
+# Minimal NanoClaw smoke-test config.
+#
+# Purpose: prove that NanoClaw can route through EnfGuard without policy noise.
+# This config intentionally declares no predicates and no policies. EnfGuard may still install its default enforcement-mode switch.
+# Use it before testing blocking/warning behavior.
+
+backend:
+  # No judge-backed predicates are declared below. These defaults only matter if
+  # someone adds judge predicates later.
+  judge_backend: openai
+  judge_timeout_ms: 500
+  judge_fail_mode: open
+
+feedback:
+  enabled: false
+
+runtime:
+  trace_assistant_content: true
+  judge_strategy: "off"
+  judge_call_mode: batched
+
+human_approval:
+  enabled: false
+
+model_blocklist: []
+switches: []
+predicates: []
+policies: []

@@ -1,0 +1,123 @@
+# OpenClaw category 1 (Reconnaissance) — new_temp EnfGuard design.
+
+
+backend:
+  chat_llm: anthropic
+  judge_backend: openai
+  judge_timeout_ms: 1000
+  judge_fail_mode: open
+  trusted_tool_names: []
+  # Reconnaissance is intentionally deterministic-only.
+  ingest_judges:
+    enabled: false
+    unknown_tool: false
+    url_risk: false
+    persistence_instruction: false
+    secret_material: false
+    uncertain_action: false
+    package_name: false
+    webshell: false
+
+runtime:
+  # Disable pre-evaluation of YAML-declared llm_judge predicates.
+  judge_strategy: "off"
+  judge_call_mode: batched
+  trace_assistant_content: true
+
+feedback:
+  enabled: false
+
+human_approval:
+  enabled: true
+  timeout_seconds: 60
+  on_timeout: block
+
+model_blocklist: []
+switches: []
+
+predicates: []
+
+policies:
+  - id: reconnaissance_v1
+    enabled: true
+    # Four labeled clauses joined by AND, all share PolicyActive(t,"reconnaissance_v1"), so one runtime toggle.
+    # recon_after_injection        -> Warn  (recon within 2 min after instruction_like)
+    # recon_sweep_after_injection  -> Block (recon after recon after instruction_like)
+    # 
+    # recon_accumulation_warn      -> Warn  (3rd recon probe)
+    # recon_accumulation_block     -> Block (4th+ recon probe)
+    # IMPLIES:R so the ToolPlanned stays visible and a Warn/Block is emitted (auditable), instead of EnfGuard suppressing the ToolPlanned.
+    mfotl: |
+      {"recon_after_injection"}{
+      ALWAYS (FORALL t, rid, s, call_id, tool, input.
+        (PolicyActive(t, "reconnaissance_v1")
+         AND Turn(t, rid, s)
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "action_class", "reconnaissance")
+         AND ONCE [0, 120] (EXISTS t2, r2, c2.
+              Turn(t2, r2, s)
+              AND NOT (t = t2)
+              AND Classify(t2, c2, "content_risk", "instruction_like")))
+        IMPLIES:R Warn(t, "tool", "recon_after_injection", "reconnaissance probe follows untrusted instruction-like content"))
+      }
+
+      AND
+
+      {"recon_sweep_after_injection"}{
+      ALWAYS (FORALL t, rid, s, call_id, tool, input.
+        (PolicyActive(t, "reconnaissance_v1")
+         AND Turn(t, rid, s)
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "action_class", "reconnaissance")
+         AND (EXISTS rcnt.
+              rcnt <- CNT(t2; s;
+                   ONCE [0, 120] (EXISTS r2, c2, tool2, input2.
+                        PolicyActive(t2, "reconnaissance_v1")
+                        AND Turn(t2, r2, s)
+                        AND ToolPlanned(t2, c2, tool2, input2)
+                        AND Classify(t2, c2, "action_class", "reconnaissance")
+                        AND ONCE [0, 120] (EXISTS ti, ri, ci.
+                             Turn(ti, ri, s)
+                             AND Classify(ti, ci, "content_risk", "instruction_like"))))
+              AND rcnt >= 2))
+        IMPLIES:R Block(t, "tool", "recon_sweep_after_injection", "two or more reconnaissance probes within 2 min of an injected instruction"))
+      }
+
+      AND
+
+      {"recon_accumulation_warn"}{
+      ALWAYS (FORALL t, rid, s, call_id, tool, input.
+        (PolicyActive(t, "reconnaissance_v1")
+         AND Turn(t, rid, s)
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "action_class", "reconnaissance")
+         AND (EXISTS rcnt.
+              rcnt <- CNT(t2; s;
+                   ONCE [0, 120] (EXISTS r2, c2, tool2, input2.
+                        PolicyActive(t2, "reconnaissance_v1")
+                        AND Turn(t2, r2, s)
+                        AND ToolPlanned(t2, c2, tool2, input2)
+                        AND Classify(t2, c2, "action_class", "reconnaissance")))
+              AND rcnt >= 3
+              AND rcnt < 4))
+        IMPLIES:R Warn(t, "tool", "recon_accumulation", "three or more reconnaissance probes within the last 2 minutes"))
+      }
+
+      AND
+
+      {"recon_accumulation_block"}{
+      ALWAYS (FORALL t, rid, s, call_id, tool, input.
+        (PolicyActive(t, "reconnaissance_v1")
+         AND Turn(t, rid, s)
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "action_class", "reconnaissance")
+         AND (EXISTS rcnt.
+              rcnt <- CNT(t2; s;
+                   ONCE [0, 120] (EXISTS r2, c2, tool2, input2.
+                        PolicyActive(t2, "reconnaissance_v1")
+                        AND Turn(t2, r2, s)
+                        AND ToolPlanned(t2, c2, tool2, input2)
+                        AND Classify(t2, c2, "action_class", "reconnaissance")))
+              AND rcnt >= 4))
+        IMPLIES:R Block(t, "tool", "recon_accumulation", "four or more reconnaissance probes within the last 2 minutes"))
+      }

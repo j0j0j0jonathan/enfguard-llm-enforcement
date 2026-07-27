@@ -1,0 +1,47 @@
+# Minimal suppression-only policy pack.
+#
+# This pack demonstrates the other proactive direction: instead of causing an
+# explicit Block(...) verdict with IMPLIES:R, the policy uses IMPLIES:L so the
+# enforcer suppresses the left-hand ToolPlanned(...) event. The proxy then
+# converts that suppressed tool fact into a tool-blocking runtime decision with
+# category "suppression".
+
+backend:
+  chat_llm: anthropic
+  judge_backend: openai
+  judge_timeout_ms: 1000
+  judge_fail_mode: open
+  trusted_tool_names: []
+
+runtime:
+  judge_strategy: "off"
+  judge_call_mode: batched
+  trace_assistant_content: true
+
+feedback:
+  enabled: false
+
+human_approval:
+  enabled: false
+
+model_blocklist: []
+switches: []
+
+predicates:
+  - name: command_writes_outside_workspace
+    kind: python
+    path: security_nanoclaw_live_predicates.py
+    args:
+      - name: input
+        type: string
+
+policies:
+  - id: demo_suppress_proposal_workspace_escape
+    enabled: true
+    mfotl: |
+      ALWAYS (FORALL t, call_id, input.
+        (PolicyActive(t, "demo_suppress_proposal_workspace_escape")
+         AND ToolPlanned(t, call_id, "bash", input)
+         AND command_writes_outside_workspace(input) > 0.5)
+        IMPLIES:L Block(t, "tool", "proposal_workspace_escape",
+                        "command can modify a file outside workspace"))

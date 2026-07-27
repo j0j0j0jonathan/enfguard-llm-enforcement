@@ -1,0 +1,37 @@
+# Live demo 1 — TOOL surface: approve every file write.
+#
+# Flow: OpenClaw before_tool_call -> enfGate -> POST /v1/tool_execute -> this
+# policy returns Approve -> the proxy PAUSES the call and registers a pending
+# approval -> the operator console shows a countdown card -> you click Allow Tool
+# Use or Block Tool Use -> OpenClaw runs or skips the write. The after_tool_call
+# hook then posts the result to /v1/tool_result, which appears in the Live stream.
+#
+# Watch it at:  http://127.0.0.1:9000/enforcement?admin_token=123&sid=live-demo
+# (Live tab: the approval card is top-right; the stream shows the tool call.)
+
+backend:
+  chat_llm: anthropic
+
+feedback:
+  enabled: false
+
+runtime:
+  trace_assistant_content: true
+
+human_approval:
+  enabled: true
+  timeout_seconds: 120     # long window so you have time to click in the console
+  on_timeout: block        # if you never answer, the write is blocked
+
+model_blocklist: []
+switches: []
+predicates: []
+
+policies:
+  - id: approve_all_writes
+    enabled: true
+    mfotl: |
+      ALWAYS (FORALL t, call_id, input.
+        (PolicyActive(t, "approve_all_writes")
+         AND ToolPlanned(t, call_id, "file_write", input))
+        IMPLIES:R Approve(t, "tool", "agent wants to write a file — approve?"))

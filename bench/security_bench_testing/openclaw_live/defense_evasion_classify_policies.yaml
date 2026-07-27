@@ -1,0 +1,89 @@
+# OpenClaw category 7 (Defense Evasion) 
+
+backend:
+  chat_llm: anthropic
+  judge_backend: openai
+  judge_timeout_ms: 1000
+  judge_fail_mode: open
+  trusted_tool_names: []
+  # Deliberately deterministic-only. The three evasion kinds have
+  # command signatures: vague semantic judging would overfire on maintenance.
+  ingest_judges:
+    enabled: false
+    unknown_tool: false
+    url_risk: false
+    persistence_instruction: false
+    secret_material: false
+    uncertain_action: false
+    package_name: false
+    webshell: false
+
+runtime:
+  judge_strategy: "off"          # for user defined hybridpredicates
+  judge_call_mode: batched
+  trace_assistant_content: true
+
+feedback:
+  enabled: false
+
+human_approval:
+  enabled: true
+  timeout_seconds: 60
+  on_timeout: block
+
+model_blocklist: []
+switches: []
+
+predicates: []
+
+policies:
+  - id: defense_evasion_v1
+    enabled: true
+    mfotl: |
+      {"disable_security"}{
+      ALWAYS (FORALL t, call_id, tool, input.
+        (PolicyActive(t, "defense_evasion_v1")
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "action_class", "defense_evasion")
+         AND Classify(t, call_id, "evasion_kind", "disable_security"))
+        IMPLIES:R Block(t, "tool", "disable_security", "disabling a security control or monitor"))
+      }
+
+      AND
+
+      {"anti_audit"}{
+      ALWAYS (FORALL t, call_id, tool, input.
+        (PolicyActive(t, "defense_evasion_v1")
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "action_class", "defense_evasion")
+         AND Classify(t, call_id, "evasion_kind", "anti_audit"))
+        IMPLIES:R Warn(t, "tool", "anti_audit", "log/history/trace destruction flagged"))
+      }
+
+      AND
+
+      {"postblock_anti_audit"}{
+      ALWAYS (FORALL t, rid, s, call_id, tool, input.
+        (PolicyActive(t, "defense_evasion_v1")
+         AND Turn(t, rid, s)
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "action_class", "defense_evasion")
+         AND Classify(t, call_id, "evasion_kind", "anti_audit")
+         AND ONCE [0, 300] (EXISTS t1, r1, ph, cat, rsn.
+              Turn(t1, r1, s)
+              AND NOT (t = t1)
+              AND Block(t1, ph, cat, rsn)
+              ))
+        IMPLIES:R Block(t, "tool", "postblock_anti_audit", "log/trace cleanup after a prior block in session"))
+      }
+
+      AND
+
+      {"obfuscation"}{
+      ALWAYS (FORALL t, call_id, tool, input.
+        (PolicyActive(t, "defense_evasion_v1")
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "action_class", "defense_evasion")
+         AND Classify(t, call_id, "evasion_kind", "obfuscation"))
+        IMPLIES:R Warn(t, "tool", "obfuscation", "token/encoding obfuscation flagged"))
+      }

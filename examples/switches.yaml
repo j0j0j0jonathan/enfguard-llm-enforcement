@@ -1,0 +1,33 @@
+# Switch examples. Copy individual entries into `switches:`.
+
+switches:
+  - id: enforcement_mode
+    kind: choice
+    label: "Enforcement mode"
+    options: [audit, warn, enforce]
+    default: audit
+
+  - id: max_prompt_tokens
+    kind: int
+    label: "Max prompt tokens"
+    default: 1200
+    min: 100
+    max: 8000
+
+  - id: allow_sensitive_output
+    kind: boolean
+    label: "Allow sensitive output"
+    default: false
+
+  - id: safety_level
+    kind: choice
+    label: "Safety level"
+    options: [low, medium, high, critical]
+    default: medium
+
+  - id: risk_threshold_bps
+    kind: int
+    label: "Risk threshold (basis points, 0–1000; 700 = 0.70)"
+    default: 700
+    min: 0
+    max: 1000

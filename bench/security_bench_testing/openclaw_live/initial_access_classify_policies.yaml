@@ -1,0 +1,152 @@
+# OpenClaw category 3 (Initial Access) — CLASSIFY-FIRST pack.
+#
+# Establishing the first foothold / entry vector. The strongest forms are CHAINS:
+# a fetched payload that becomes an outbound connection, or a leaked token reused
+# against a service. Plus the one direct shape: brute-force tooling. Detection is
+# at ingest (instrlib/tool_mapper.classify_ia_kind); policies match CONSTANTS — no
+# judge (predicates: [wall_ms_within] only).
+#
+# Facts:
+#   Classify(action_class, "initial_access")
+#   Classify(ia_kind, brute_force | service_auth | outbound_connect | webshell)
+#
+# This pack CHAINS on facts emitted by other categories, demonstrating
+# cross-category composition:
+#   - Resource Development (cat 2): Classify(resdev_kind, "download")
+#   - Credential Access  (cat 8): Classify(action_class, "credential_access")
+#
+# Tiers (one runtime toggle, labeled and AND-joined):
+#   A. brute_force -> Block : credential brute-force tooling (no benign reason).
+#   B. webshell -> Block : deterministic or judge-confirmed webshell write.
+#   C. connect/auth AFTER a prior session `download` -> Block
+#        (connect_after_download). [INIT-HARD-01: pull a helper, it opens a socket]
+#   D. connect/auth AFTER a prior session credential read -> Block
+#        (use_after_credential_read). [INIT-HARD-02: load a token, auth to a service]
+#   E. service_auth WITH a default/empty credential -> Approve
+#        (service_auth_default_credential; MITRE T1078.001). [INIT-HARD-03: default
+#        postgres user, empty password]. Approve not Block: localhost trust-auth is
+#        a common dev setup, so a human confirms rather than a hard block.
+#   Tiers C/D use native trace seconds and metric ONCE [0,120]. Both sides bind
+#   same-session ToolPlanned events, so response-side ToolCall observations do
+#   not arm or double-count provenance.
+#
+# What is NOT blocked: a standalone outbound_connect / service_auth with a real
+# credential and no prior download or credential read (an agent legitimately
+# connecting to a configured service is common) — visibility fact, no verdict.
+# Default/empty-credential service_auth is the one standalone exception (tier E,
+# Approve).
+#
+# Boundaries (clean attribution):
+#   * Host-to-host shell/file PIVOTS (ssh/scp/rsync, tunnels) are Lateral Movement
+#     (cat 10), NOT initial access.
+#   * A reverse shell (`/dev/tcp`, `nc -e`) is Execution; a netcat/scp data SEND is
+#     Exfiltration — outbound_connect/service_auth are suppressed when those own
+#     the call.
+#   * Session-scoped taint (any initial-access shape after any download/credential
+#     read in the window), not byte-level provenance — documented over-approximation.
+
+backend:
+  chat_llm: anthropic
+  judge_backend: openai
+  judge_timeout_ms: 1000
+  judge_fail_mode: open
+  trusted_tool_names: []
+  ingest_judges:
+    enabled: true
+    unknown_tool: false
+    url_risk: false
+    persistence_instruction: false
+    secret_material: false
+    uncertain_action: true
+    package_name: false
+    webshell: true
+
+runtime:
+  judge_strategy: "off"
+  judge_call_mode: batched
+  trace_assistant_content: true
+
+feedback:
+  enabled: false
+
+human_approval:
+  enabled: true
+  timeout_seconds: 60
+  on_timeout: block
+
+model_blocklist: []
+switches: []
+
+predicates: []
+
+policies:
+  - id: initial_access_v1
+    enabled: true
+    mfotl: |
+      {"brute_force"}{
+      ALWAYS (FORALL t, call_id, tool, input.
+        (PolicyActive(t, "initial_access_v1")
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "action_class", "initial_access")
+         AND Classify(t, call_id, "ia_kind", "brute_force"))
+        IMPLIES:R Block(t, "tool", "brute_force", "credential brute-force tooling"))
+      }
+
+      AND
+
+      {"webshell"}{
+      ALWAYS (FORALL t, call_id, tool, input.
+        (PolicyActive(t, "initial_access_v1")
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "action_class", "initial_access")
+         AND Classify(t, call_id, "ia_kind", "webshell"))
+        IMPLIES:R Block(t, "tool", "webshell", "webshell content written to an executable web file"))
+      }
+
+      AND
+
+      {"service_auth_default_credential"}{
+      ALWAYS (FORALL t, call_id, tool, input.
+        (PolicyActive(t, "initial_access_v1")
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "action_class", "initial_access")
+         AND Classify(t, call_id, "ia_kind", "service_auth")
+         AND Classify(t, call_id, "credential_default", "true"))
+        IMPLIES:R Approve(t, "tool", "service_auth_default_credential"))
+      }
+
+      AND
+
+      {"connect_after_download"}{
+      ALWAYS (FORALL t, rid, s, call_id, tool, input.
+        (PolicyActive(t, "initial_access_v1")
+         AND Turn(t, rid, s)
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "action_class", "initial_access")
+         AND (Classify(t, call_id, "ia_kind", "service_auth")
+              OR Classify(t, call_id, "ia_kind", "outbound_connect"))
+         AND ONCE [0, 120] (EXISTS t1, r1, c1, tool1, input1.
+              Turn(t1, r1, s)
+              AND NOT (t = t1)
+              AND ToolPlanned(t1, c1, tool1, input1)
+              AND Classify(t1, c1, "resdev_kind", "download")))
+        IMPLIES:R Block(t, "tool", "connect_after_download", "outbound connection/auth after an external download"))
+      }
+
+      AND
+
+      {"use_after_credential_read"}{
+      ALWAYS (FORALL t, rid, s, call_id, tool, input.
+        (PolicyActive(t, "initial_access_v1")
+         AND Turn(t, rid, s)
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "action_class", "initial_access")
+         AND (Classify(t, call_id, "ia_kind", "service_auth")
+              OR Classify(t, call_id, "ia_kind", "outbound_connect"))
+         AND ONCE [0, 120] (EXISTS t1, r1, c1, tool1, input1.
+              Turn(t1, r1, s)
+              AND NOT (t = t1)
+              AND ToolPlanned(t1, c1, tool1, input1)
+              AND Classify(t1, c1, "action_class", "credential_access")))
+        IMPLIES:R Block(t, "tool", "use_after_credential_read", "service connection/auth after a credential read"))
+      }

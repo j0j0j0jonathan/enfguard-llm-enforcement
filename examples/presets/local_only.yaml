@@ -1,0 +1,33 @@
+# Minimal Local-Only Mode: keep prompts on local/Ollama-style models.
+
+backend:
+  chat_llm: ollama
+  judge_backend: ollama
+  judge_ollama_model: qwen2.5:0.5b
+  judge_timeout_ms: 5000
+  judge_fail_mode: warn
+
+policies:
+  - id: block_openai_provider
+    enabled: true
+    mfotl: |
+      ALWAYS (FORALL t, model.
+        (PolicyActive(t, "block_openai_provider")
+         AND ModelSelection(t, "openai", model))
+        IMPLIES Block(t, "request", "local_only", "cloud provider openai is disabled"))
+
+  - id: block_anthropic_provider
+    enabled: true
+    mfotl: |
+      ALWAYS (FORALL t, model.
+        (PolicyActive(t, "block_anthropic_provider")
+         AND ModelSelection(t, "anthropic", model))
+        IMPLIES Block(t, "request", "local_only", "cloud provider anthropic is disabled"))
+
+  - id: warn_small_local_model
+    enabled: true
+    mfotl: |
+      ALWAYS (FORALL t, model.
+        (PolicyActive(t, "warn_small_local_model")
+         AND ModelSelection(t, "ollama", model))
+        IMPLIES Warn(t, "request", "local_only", "local model selected; check quality for critical work"))

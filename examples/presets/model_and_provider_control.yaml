@@ -1,0 +1,109 @@
+# Model and Provider Control: govern which providers and models an agent may use,
+# and route sensitive tasks through human approval.
+#
+# This is a governance pack, not a security pack. It enforces deployment policy
+# over model selection, not attack defence. All clauses reuse facts the proxy
+# already emits (ModelSelection, the model_blocklist builtin, SettingBool/Int,
+# Message content) and mirror the shapes of the shipped local_only / company_safe
+# / cost_control presets, so it loads the same way.
+#
+# How to configure:
+#   * model_blocklist        list the models a deployment does NOT approve.
+#   * the per-provider blocks default to DISABLED. Enable the providers you want
+#     to forbid (e.g. enable block_provider_openai to force a non-OpenAI route).
+#   * switches expose the on/off knobs without editing MFOTL.
+
+backend:
+  chat_llm: openai
+  judge_backend: openai
+  judge_openai_model: gpt-4o-mini
+  judge_timeout_ms: 5000
+  judge_fail_mode: warn
+
+# Models that are not approved for this deployment. The model_blocklist builtin
+# returns > 0.5 for any model whose name appears here.
+model_blocklist:
+  - gpt-4.5-preview
+  - o1-pro
+  - claude-3-opus
+
+switches:
+  - id: enforce_model_allowlist
+    kind: boolean
+    label: "Block models not on the approved list"
+    default: true
+
+  - id: require_sensitive_task_approval
+    kind: boolean
+    label: "Approve before sending a sensitive task to the model"
+    default: false
+
+predicates:
+  - name: model_blocklist
+    kind: builtin
+
+  - name: sensitive_task
+    kind: llm_judge
+    inputs:
+      - source: Message
+        arg: content
+    system_prompt: |
+      Score 1.0 only when the user request involves sensitive or regulated
+      material or a high-stakes operation: confidential company or customer
+      data, credentials or secrets, legal, HR, financial, or health records, or
+      an irreversible production change. Score 0.0 for ordinary development,
+      research, or general questions.
+    on_fail: warn
+
+policies:
+  # 1. Model allowlist. A model that is not approved (present in model_blocklist)
+  #    is blocked, gated by a switch so a deployment can turn the allowlist off.
+  - id: block_unapproved_models
+    enabled: true
+    mfotl: |
+      ALWAYS (FORALL t, provider, model.
+        (PolicyActive(t, "block_unapproved_models")
+         AND ModelSelection(t, provider, model)
+         AND SettingBool(t, "enforce_model_allowlist", 1)
+         AND model_blocklist(model) > 0.5)
+        IMPLIES Block(t, "request", "model", "model is not on the approved list"))
+
+  # 2. Provider allowlist (opt-in). Enable the providers you want to forbid so
+  #    traffic is forced onto the approved route. Disabled by default.
+  - id: block_provider_openai
+    enabled: false
+    mfotl: |
+      ALWAYS (FORALL t, model.
+        (PolicyActive(t, "block_provider_openai")
+         AND ModelSelection(t, "openai", model))
+        IMPLIES Block(t, "request", "provider", "provider openai is not allowed for this deployment"))
+
+  - id: block_provider_anthropic
+    enabled: false
+    mfotl: |
+      ALWAYS (FORALL t, model.
+        (PolicyActive(t, "block_provider_anthropic")
+         AND ModelSelection(t, "anthropic", model))
+        IMPLIES Block(t, "request", "provider", "provider anthropic is not allowed for this deployment"))
+
+  # 3. Routing approval. A request the judge flags as a sensitive task is held
+  #    for human approval before it is sent, gated by a switch (opt-in).
+  - id: approve_sensitive_task_routing
+    enabled: true
+    mfotl: |
+      ALWAYS (FORALL t, c, n.
+        (PolicyActive(t, "approve_sensitive_task_routing")
+         AND Message(t, "user", c, n)
+         AND SettingBool(t, "require_sensitive_task_approval", 1)
+         AND sensitive_task(c) > 0.5)
+        IMPLIES Approve(t, "request", "Sensitive task detected. Approve sending it to the selected model?"))
+
+  # 4. Downgrade awareness. A small local model on any request gets a quality
+  #    warning, so a deployment notices when work is routed to a weak model.
+  - id: warn_local_model_quality
+    enabled: true
+    mfotl: |
+      ALWAYS (FORALL t, model.
+        (PolicyActive(t, "warn_local_model_quality")
+         AND ModelSelection(t, "ollama", model))
+        IMPLIES Warn(t, "request", "routing", "small local model selected; check quality for sensitive or high-stakes work"))

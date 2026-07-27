@@ -1,0 +1,45 @@
+# NanoClaw tool-execution demo config.
+#
+# Purpose: prove point B enforcement: a proposed agent action is checked
+# before the SDK executes the tool.
+
+backend:
+  judge_backend: openai
+  judge_timeout_ms: 500
+  judge_fail_mode: open
+
+feedback:
+  enabled: false
+
+runtime:
+  trace_assistant_content: true
+  judge_strategy: "off"
+  judge_call_mode: batched
+
+human_approval:
+  enabled: true
+  timeout_seconds: 60
+  on_timeout: block
+
+model_blocklist: []
+switches: []
+predicates: []
+
+policies:
+  - id: block_destructive_bash
+    enabled: true
+    mfotl: |
+      ALWAYS (FORALL t, call_id, input.
+        (PolicyActive(t, "block_destructive_bash")
+         AND ToolPlanned(t, call_id, "bash", input)
+         AND Classify(t, call_id, "command_risk", "critical"))
+        IMPLIES Block(t, "tool", "command", "destructive shell command refused"))
+
+  - id: require_approval_for_credentials_read
+    enabled: true
+    mfotl: |
+      ALWAYS (FORALL t, call_id, input.
+        (PolicyActive(t, "require_approval_for_credentials_read")
+         AND ToolPlanned(t, call_id, "file_read", input)
+         AND Classify(t, call_id, "path_sensitivity", "credentials"))
+        IMPLIES Approve(t, "tool", "agent wants to read a credentials file"))

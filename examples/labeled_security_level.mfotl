@@ -1,0 +1,39 @@
+(* Labeled MFOTL example for newer EnfGuard binaries.
+
+   Required switch:
+     SettingString(t, "safety_level", "low"|"medium"|"high")
+
+   Required predicate:
+     confidential_information(content:string) : float
+*)
+
+{"Low: monitor confidential input"}{
+  ALWAYS (FORALL t, c, n.
+    (PolicyActive(t, "security_level_labels")
+     AND Message(t, "user", c, n)
+     AND SettingString(t, "safety_level", "low")
+     AND confidential_information(c) > 0.5)
+    IMPLIES Warn(t, "request", "privacy", "confidential input observed"))
+}
+
+AND
+
+{"Medium: warn before sending confidential input"}{
+  ALWAYS (FORALL t, c, n.
+    (PolicyActive(t, "security_level_labels")
+     AND Message(t, "user", c, n)
+     AND SettingString(t, "safety_level", "medium")
+     AND confidential_information(c) > 0.5)
+    IMPLIES Warn(t, "request", "privacy", "confidential input may be sent"))
+}
+
+AND
+
+{"High: block confidential input"}{
+  ALWAYS (FORALL t, c, n.
+    (PolicyActive(t, "security_level_labels")
+     AND Message(t, "user", c, n)
+     AND SettingString(t, "safety_level", "high")
+     AND confidential_information(c) > 0.5)
+    IMPLIES Block(t, "request", "privacy", "confidential input blocked"))
+}

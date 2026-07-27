@@ -1,0 +1,178 @@
+# OpenClaw category 9 (Discovery) — CLASSIFY-FIRST pack, SIMPLIFIED (v2).
+#
+# Same enforcement power as discovery_classify_policies.yaml, fewer/simpler
+# clauses. A/B-test this against the v1 pack on the same mapper output.
+#
+# FULLY classify-first now: NO in-formula Python predicate at all (predicates: []).
+# Confinement migrated to a Classify fact (2026-05-30, after the v2 live run):
+# the mapper emits Classify(path_confinement, "escape") when a path realpath-
+# resolves outside the workspace, so the clause is just a constant match.
+# path_sensitivity (apparent filename class) and path_confinement (resolved
+# physical target) are SEPARATE dimensions — the symlink test proves both are
+# needed: report_link is path_sensitivity=public yet path_confinement=escape.
+#
+# What was simplified (and why it keeps the same power):
+#   * Matching is on Classify facts (confinement / credentials / tool_family),
+#     not Python predicates.
+#   * Credential sweep merged with OR: credentials AND (tool_family=search OR
+#     tool_family=shell) — one clause instead of one per mechanism.
+#
+# Execution-phase enforcement: every instant tier requires ToolPlanned, so a
+# verdict fires at the pre-execution tool gate (when the runtime is about to act)
+# and NOT merely when the assistant proposes a tool in its response. The mapper
+# emits the same Classify facts at both the response (ToolCall) and tool
+# (ToolPlanned) phases; gating on ToolPlanned keeps the block at the authoritative
+# execution boundary. The accumulation tier also counts only ToolPlanned-phase
+# discovery facts (eval Fix 2), so response/tool double-counting cannot happen.
+#
+# Fixes applied from the v2 live-run eval:
+#   * Fix 2 (double-count): the accumulation body and trigger now require
+#     ToolPlanned, so only the tool-execution phase counts, not the response-phase
+#     ToolCall.
+#   * Fix 3 (credential sweeps inflating recon): handled at the mapper — a
+#     credential sweep no longer also emits action_class=discovery, so it blocks
+#     as credential_discovery without contributing to recon accumulation.
+#   * Fix 4 (label): credential file access approval is now "credential_file_access"
+#     (covers file read/write/delete on credentials), not "credential_read".
+#
+# Behavioural note vs v1: credential approve is keyed on tool_family=file, so a
+# credential file_write/delete also routes to Approve here (v1 only handled read).
+#
+# If your binary rejects inline OR, split clause 2 into two Block clauses.
+# Accumulation updated 2026-06-03: no CNT and no MFOTL metric intervals. It now
+# uses plain ONCE + Clock + wall_ms_within(...,120000) with distinct timestamp
+# guards, matching the Reconnaissance live fix.
+
+backend:
+  chat_llm: anthropic
+  judge_backend: openai
+  judge_timeout_ms: 1000
+  judge_fail_mode: open
+  trusted_tool_names: []
+
+runtime:
+  judge_strategy: "off"
+  judge_call_mode: batched
+  trace_assistant_content: true
+
+feedback:
+  enabled: false
+
+human_approval:
+  enabled: true
+  timeout_seconds: 60
+  on_timeout: block
+
+model_blocklist: []
+switches: []
+
+# Fully classify-first: no in-formula Python predicate. Confinement is now a
+# Classify fact emitted at ingest (tool_mapper -> instrlib/path_confinement),
+# so this pack needs no predicate registration at all.
+predicates:
+  - name: wall_ms_within
+    kind: builtin
+
+policies:
+  - id: discovery_v2
+    enabled: true
+    mfotl: |
+      ALWAYS (FORALL t, call_id, tool, input.
+        (PolicyActive(t, "discovery_v2")
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "path_confinement", "escape"))
+        IMPLIES:R Block(t, "tool", "path_confinement", "file path resolves outside workspace"))
+
+      AND
+
+      ALWAYS (FORALL t, call_id, tool, input.
+        (PolicyActive(t, "discovery_v2")
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "path_sensitivity", "credentials")
+         AND (Classify(t, call_id, "tool_family", "search")
+              OR Classify(t, call_id, "tool_family", "shell")))
+        IMPLIES:R Block(t, "tool", "credential_discovery", "search/command targets credential or secret files"))
+
+      AND
+
+      ALWAYS (FORALL t, call_id, tool, input.
+        (PolicyActive(t, "discovery_v2")
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "path_sensitivity", "credentials")
+         AND Classify(t, call_id, "tool_family", "file"))
+        IMPLIES:R Approve(t, "tool", "credential_file_access"))
+
+      AND
+
+      ALWAYS (FORALL t, rid, s, call_id, tool, input, ms_now.
+        (PolicyActive(t, "discovery_v2")
+         AND Turn(t, rid, s)
+         AND Clock(t, "tool", ms_now)
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "action_class", "discovery")
+         AND ONCE (EXISTS t1, r1, c1, tool1, input1, ms1.
+              Turn(t1, r1, s)
+              AND Clock(t1, "tool", ms1)
+              AND ToolPlanned(t1, c1, tool1, input1)
+              AND NOT (t = t1)
+              AND wall_ms_within(ms_now, ms1, 120000) > 0.5
+              AND Classify(t1, c1, "action_class", "discovery")
+              AND PolicyActive(t1, "discovery_v2")
+              AND ONCE (EXISTS t2, r2, c2, tool2, input2, ms2.
+                   Turn(t2, r2, s)
+                   AND Clock(t2, "tool", ms2)
+                   AND ToolPlanned(t2, c2, tool2, input2)
+                   AND NOT (t = t2)
+                   AND NOT (t1 = t2)
+                   AND wall_ms_within(ms_now, ms2, 120000) > 0.5
+                   AND Classify(t2, c2, "action_class", "discovery")
+                   AND PolicyActive(t2, "discovery_v2"))))
+        IMPLIES:R Warn(t, "tool", "recon_accumulation", "three or more discovery probes in session"))
+
+      AND
+
+      ALWAYS (FORALL t, rid, s, call_id, tool, input, ms_now.
+        (PolicyActive(t, "discovery_v2")
+         AND Turn(t, rid, s)
+         AND Clock(t, "tool", ms_now)
+         AND ToolPlanned(t, call_id, tool, input)
+         AND Classify(t, call_id, "action_class", "discovery")
+         AND ONCE (EXISTS t1, r1, c1, tool1, input1, ms1.
+              Turn(t1, r1, s)
+              AND Clock(t1, "tool", ms1)
+              AND ToolPlanned(t1, c1, tool1, input1)
+              AND NOT (t = t1)
+              AND wall_ms_within(ms_now, ms1, 120000) > 0.5
+              AND Classify(t1, c1, "action_class", "discovery")
+              AND PolicyActive(t1, "discovery_v2")
+              AND ONCE (EXISTS t2, r2, c2, tool2, input2, ms2.
+                   Turn(t2, r2, s)
+                   AND Clock(t2, "tool", ms2)
+                   AND ToolPlanned(t2, c2, tool2, input2)
+                   AND NOT (t = t2)
+                   AND NOT (t1 = t2)
+                   AND wall_ms_within(ms_now, ms2, 120000) > 0.5
+                   AND Classify(t2, c2, "action_class", "discovery")
+                   AND PolicyActive(t2, "discovery_v2")
+                   AND ONCE (EXISTS t3, r3, c3, tool3, input3, ms3.
+                        Turn(t3, r3, s)
+                        AND Clock(t3, "tool", ms3)
+                        AND ToolPlanned(t3, c3, tool3, input3)
+                        AND NOT (t = t3)
+                        AND NOT (t1 = t3)
+                        AND NOT (t2 = t3)
+                        AND wall_ms_within(ms_now, ms3, 120000) > 0.5
+                        AND Classify(t3, c3, "action_class", "discovery")
+                        AND PolicyActive(t3, "discovery_v2")
+                        AND ONCE (EXISTS t4, r4, c4, tool4, input4, ms4.
+                             Turn(t4, r4, s)
+                             AND Clock(t4, "tool", ms4)
+                             AND ToolPlanned(t4, c4, tool4, input4)
+                             AND NOT (t = t4)
+                             AND NOT (t1 = t4)
+                             AND NOT (t2 = t4)
+                             AND NOT (t3 = t4)
+                             AND wall_ms_within(ms_now, ms4, 120000) > 0.5
+                             AND Classify(t4, c4, "action_class", "discovery")
+                             AND PolicyActive(t4, "discovery_v2"))))))
+        IMPLIES:R Block(t, "tool", "recon_accumulation", "five or more discovery probes in session"))

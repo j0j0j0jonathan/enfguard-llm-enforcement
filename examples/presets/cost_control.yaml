@@ -1,0 +1,61 @@
+# Cost Control: prevent accidental overspending.
+
+backend:
+  chat_llm: openai
+  judge_backend: openai
+  judge_openai_model: gpt-4o-mini
+  judge_timeout_ms: 2500
+  judge_fail_mode: warn
+
+model_blocklist:
+  - gpt-4.5-preview
+  - o1-pro
+
+switches:
+  - id: max_prompt_tokens
+    kind: int
+    label: "Max prompt tokens"
+    default: 1500
+    min: 100
+    max: 16000
+
+  - id: max_output_tokens
+    kind: int
+    label: "Max output tokens"
+    default: 1000
+    min: 100
+    max: 8000
+
+predicates:
+  - name: model_blocklist
+    kind: builtin
+
+policies:
+  - id: block_expensive_models
+    enabled: true
+    mfotl: |
+      ALWAYS (FORALL t, provider, model.
+        (PolicyActive(t, "block_expensive_models")
+         AND ModelSelection(t, provider, model)
+         AND model_blocklist(model) > 0.5)
+        IMPLIES Block(t, "request", "cost", "model is blocked by budget policy"))
+
+  - id: block_long_prompts
+    enabled: true
+    mfotl: |
+      ALWAYS (FORALL t, c, n, max.
+        (PolicyActive(t, "block_long_prompts")
+         AND Message(t, "user", c, n)
+         AND SettingInt(t, "max_prompt_tokens", max)
+         AND n > max)
+        IMPLIES Block(t, "request", "cost", "prompt exceeds token budget"))
+
+  - id: warn_long_outputs
+    enabled: true
+    mfotl: |
+      ALWAYS (FORALL t, c, n, max.
+        (PolicyActive(t, "warn_long_outputs")
+         AND Completion(t, c, n)
+         AND SettingInt(t, "max_output_tokens", max)
+         AND n > max)
+        IMPLIES Warn(t, "response", "cost", "response exceeds output budget"))

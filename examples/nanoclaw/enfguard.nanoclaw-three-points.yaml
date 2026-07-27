@@ -1,0 +1,88 @@
+# NanoClaw three-point enforcement demo.
+#
+# Purpose: test all three enforcement points in one small policy pack:
+# 1. inbound user request enforcement,
+# 2. outbound model response enforcement,
+# 3. pre-execution agent tool enforcement.
+
+backend:
+  chat_llm: anthropic
+  judge_backend: openai
+  judge_openai_model: gpt-4o-mini
+  judge_timeout_ms: 5000
+  judge_fail_mode: open
+
+feedback:
+  enabled: false
+
+runtime:
+  trace_assistant_content: true
+  judge_strategy: active_policy
+  judge_call_mode: batched
+
+human_approval:
+  enabled: true
+  timeout_seconds: 60
+  on_timeout: block
+
+model_blocklist: []
+switches: []
+
+predicates:
+  - name: credential_leakage_request
+    kind: llm_judge
+    backend: openai
+    model: gpt-4o-mini
+    timeout_ms: 5000
+    inputs:
+      - source: Message
+        arg: content
+    system_prompt: |
+      Return 1 only if the user asks the agent to reveal, print, copy,
+      exfiltrate, summarize, or expose secrets such as API keys, tokens,
+      passwords, private keys, .env files, SSH keys, OAuth tokens, or
+      credential files. Return 0 for ordinary questions, benign discussion
+      of credential safety, or requests to protect/rotate/delete secrets.
+    on_fail: open
+
+  - name: contains_emoji
+    kind: python
+    path: ./examples/nanoclaw_demo_predicates.py
+    args:
+      - name: content
+        type: string
+
+  - name: writes_approval_demo_folder
+    kind: python
+    path: ./examples/nanoclaw_demo_predicates.py
+    args:
+      - name: path
+        type: string
+
+policies:
+  - id: inbound_block_credential_leakage
+    enabled: true
+    mfotl: |
+      ALWAYS (FORALL t, c, n.
+        (PolicyActive(t, "inbound_block_credential_leakage")
+         AND Message(t, "user", c, n)
+         AND credential_leakage_request(c) > 0.5)
+        IMPLIES Block(t, "request", "credentials", "request asks for credential leakage"))
+
+  - id: outbound_block_emoji
+    enabled: true
+    mfotl: |
+      ALWAYS (FORALL t, c, n.
+        (PolicyActive(t, "outbound_block_emoji")
+         AND Completion(t, c, n)
+         AND contains_emoji(c) > 0.5)
+        IMPLIES Block(t, "response", "style", "emoji output is blocked"))
+
+  - id: tool_approve_writes_to_demo_folder
+    enabled: true
+    mfotl: |
+      ALWAYS (FORALL t, call_id, input.
+        (PolicyActive(t, "tool_approve_writes_to_demo_folder")
+         AND ToolPlanned(t, call_id, "file_write", input)
+         AND writes_approval_demo_folder(input) > 0.5)
+        IMPLIES Approve(t, "tool", "agent wants to write under approval-demo"))
