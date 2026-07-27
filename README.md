@@ -122,24 +122,3 @@ artefacts, which are published separately:
 Enforcement observes what crosses its instrumented boundaries. Actions a runtime
 takes without calling the hooks, and actions executed on another host, are
 outside the enforceable surface by construction.
-
-## Citing
-
-If you use this work, please cite the thesis (see `CITATION.cff`) and the
-EnfGuard enforcer:
-
-```bibtex
-@inproceedings{Hublet2025,
-  author    = {François Hublet and Leonardo Lima and David Basin and
-               Srdjan Krstic and Dmitriy Traytel},
-  title     = {Scaling Up Proactive Enforcement},
-  booktitle = {Proceedings of the 37th International Conference on
-               Computer Aided Verification (CAV)},
-  year      = {2025},
-  publisher = {Springer},
-}
-```
-
-## Licence
-
-MIT, see `LICENSE`. The EnfGuard enforcer is separately licensed under LGPL-3.0.
