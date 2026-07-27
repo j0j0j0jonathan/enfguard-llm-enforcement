@@ -1,4 +1,4 @@
-"""FastAPI two-phase enforcement proxy for EnfGuard v2.
+"""FastAPI two-phase enforcement proxy for EnfGuard.
 
 runnable backend spine: Anthropic Messages,OpenAI-compatible Chat and Ollama, mappings and
 handlers only see the two canonical chat formats.
