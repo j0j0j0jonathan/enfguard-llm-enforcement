@@ -20,13 +20,6 @@
 #   Cat 12 Exfiltration
 #   Cat 13 Impact
 #
-# Evidence status is tracked separately from policy inclusion. Categories 1-11
-# have fresh NanoClaw evidence. Category 12 is currently being tested, and
-# Category 13 has a prepared 23-row matrix for the final fresh run.
-#
-# `external_judge` (disabled) is a single-LLM-judge comparison baseline: enable
-# only it in the UI to compare the classify-first packs against one-shot judging.
-
 backend:
   chat_llm: anthropic
   judge_backend: openai
