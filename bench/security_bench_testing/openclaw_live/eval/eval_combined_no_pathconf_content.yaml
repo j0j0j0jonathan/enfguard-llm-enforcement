@@ -17,15 +17,6 @@
 #                               the base sibling eval_combined_no_pathconf.yaml
 #                               stays the deterministic comparison run.
 #
-# Security/utility sweep ("relax knobs"): to move a sub-kind from Block->Allow
-# (trading security for utility), disable the corresponding clause. Because the
-# MFOTL is folded verbatim from the standalone packs, edit the clause there (or
-# comment it here) and re-run. Re-validate with the OCaml type-check on load.
-#
-# !!! Re-run the EnfGuard MFOTL syntax/type check on the Mac after any edit. !!!
-#
-# Combined OpenClaw/NanoClaw supervisor demo pack - all 13 categories.
-#
 # Scope: all 13 built categories, each folded in from its current standalone
 # *_classify_policies.yaml pack. Temporal tiers use
 # native metric intervals over wall-second trace time. The Python bridge sends
@@ -46,12 +37,6 @@
 #   Cat 12 Exfiltration
 #   Cat 13 Impact
 #
-# Evidence status is tracked separately from policy inclusion. Categories 1-11
-# have fresh NanoClaw evidence. Category 12 is currently being tested, and
-# Category 13 has a prepared 23-row matrix for the final fresh run.
-#
-# `external_judge` (disabled) is a single-LLM-judge comparison baseline: enable
-# only it in the UI to compare the classify-first packs against one-shot judging.
 
 backend:
   chat_llm: anthropic
