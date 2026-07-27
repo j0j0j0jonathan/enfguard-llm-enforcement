@@ -100,7 +100,7 @@ skipped when the OCaml binary is absent.
 | `examples/` | Runnable demos and policy presets |
 | `scripts/` | Overhead measurement, RedCode scoring, false-positive probe |
 | `frontend/` | Enforcement console source (run `npm install && npm run build`) |
-| `docs/` | Classify vocabulary, design notes, threat model |
+| `docs/` | The classify vocabulary a policy may match |
 
 ## Policy packs
 

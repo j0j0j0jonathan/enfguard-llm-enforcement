@@ -610,6 +610,4 @@ prompts:
       unterzeichnet, weil die Frist abgelaufen war."
     notes: |
       The Spec's "transformation exception" — translating user-provided
-      benign content is allowed. The harder transformation cases (the
-      "translate disallowed text vs. add new disallowed text" boundary)
-      live in bench/transformation_exception_prompts.yaml.
+      benign content is allowed.

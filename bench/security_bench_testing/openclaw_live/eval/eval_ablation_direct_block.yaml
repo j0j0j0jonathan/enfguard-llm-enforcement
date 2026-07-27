@@ -2,7 +2,7 @@
 # Derived from eval_combined_block_or_allow.yaml: kept only direct Block clauses,
 # dropped all Approve, Warn, and temporal (ONCE) clauses. Keeps per-category
 # sub-kind specificity, removes temporal + graduated tiers. Compare against the
-# full combined policy and eval_ablation_block_any_class.yaml.
+# full combined policy.
 # DO NOT hand-edit; regenerate with make_ablation_policies.py.
 # !!! Re-run the EnfGuard MFOTL syntax/type check on the Mac after generating. !!!
 
