@@ -1,4 +1,4 @@
-"""Narrow static analysis for EnfGuard v2 policy formulas.
+"""Narrow static analysis for EnfGuard policy formulas.
 
 This is intentionally not a general MFOTL parser. It recognises the policy
 shapes we use for batching predicate calls:
