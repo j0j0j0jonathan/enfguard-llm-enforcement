@@ -37,9 +37,9 @@ Snippets to paste into a config of your own.
 - `labeled_security_level.mfotl` - policy labels for newer EnfGuard binaries.
 - `demo_predicates.py` - the Python predicates the starter config uses.
 
-## Case studies
+## Chat only
 
-Policy packs written against published vendor rules, used in the chatbot case
+Policy packs written against published vendor rules
 study.
 
 - `anthropic_constitution.yaml`
